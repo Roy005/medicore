@@ -1,0 +1,9 @@
+{
+  "name": "@medicore/backend",
+  "version": "0.0.1",
+  "description": "MediCore Backend — NestJS API Server",
+  "private": true,
+  "scripts": {
+    "dev": "echo 'NestJS app not scaffolded yet — run Task 2 first'"
+  }
+}

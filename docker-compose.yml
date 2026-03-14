@@ -1,0 +1,105 @@
+# ============================================
+# MediCore — Docker Compose (Local Development)
+# ============================================
+# Usage:
+#   cp .env.example .env   (first time only)
+#   docker-compose up -d
+#   docker-compose ps
+#   docker-compose down
+# ============================================
+
+services:
+  # ── PostgreSQL 16 ──────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: medicore-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-medicore}
+      POSTGRES_USER: ${POSTGRES_USER:-medicore}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-medicore_secret}
+    volumes:
+      - medicore_pgdata:/var/lib/postgresql/data
+    networks:
+      - medicore-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-medicore} -d ${POSTGRES_DB:-medicore}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ── Redis 7 ────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: medicore-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - medicore_redisdata:/data
+    networks:
+      - medicore-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  # ── Backend (NestJS) — placeholder ─────────────────────────────
+  # Uncomment once the NestJS app is scaffolded (Task 2+)
+  #
+  # backend:
+  #   build:
+  #     context: ./apps/backend
+  #     dockerfile: Dockerfile
+  #   container_name: medicore-backend
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3001:3001"
+  #   environment:
+  #     NODE_ENV: development
+  #     DATABASE_URL: postgresql://${POSTGRES_USER:-medicore}:${POSTGRES_PASSWORD:-medicore_secret}@postgres:5432/${POSTGRES_DB:-medicore}
+  #     REDIS_URL: redis://redis:6379
+  #     JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   networks:
+  #     - medicore-network
+
+  # ── Frontend (Next.js) — placeholder ───────────────────────────
+  # Uncomment once the Next.js app is scaffolded (Task 2+)
+  #
+  # frontend:
+  #   build:
+  #     context: ./apps/frontend
+  #     dockerfile: Dockerfile
+  #   container_name: medicore-frontend
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     NEXT_PUBLIC_API_URL: http://localhost:3001
+  #   depends_on:
+  #     - backend
+  #   networks:
+  #     - medicore-network
+
+# ── Volumes ────────────────────────────────────────────────────
+volumes:
+  medicore_pgdata:
+    driver: local
+  medicore_redisdata:
+    driver: local
+
+# ── Networks ───────────────────────────────────────────────────
+networks:
+  medicore-network:
+    driver: bridge

@@ -151,33 +151,32 @@ The platform is built as **7 independently deployable modules**, each with its o
 | Layer | Technology |
 |-------|-----------|
 | **Backend** | Node.js + NestJS + TypeScript |
-| **AI Service** | Python + FastAPI |
-| **Frontend** | Next.js (Web) + React Native (Mobile) |
-| **Database** | PostgreSQL 16 with Row-Level Security |
-| **Time-Series** | TimescaleDB |
-| **Auth** | Keycloak (self-hosted on EKS, OIDC) |
-| **Message Queue** | Apache Kafka (AWS MSK) |
-| **Cache** | Redis Sentinel |
-| **Object Storage** | AWS S3 with SSE-KMS |
-| **CDN** | AWS CloudFront |
-| **Infrastructure** | Terraform + AWS EKS |
-| **Service Mesh** | Istio (mTLS) |
-| **ML/AI** | LSTM, XGBoost, SHAP, BioBERT, MedCPT |
-| **LLM** | Claude (Anthropic API) |
-| **Monitoring** | MLflow, Evidently AI |
+| **Frontend** | Next.js 14 + TypeScript + Tailwind CSS |
+| **Database** | PostgreSQL 16 |
+| **Cache** | Redis 7 |
+| **Auth** | Manual JWT + bcrypt |
+| **File Storage** | Local filesystem |
+| **Infrastructure** | Docker Compose (local dev) |
 | **CI/CD** | GitHub Actions |
-| **Security Scanning** | Semgrep (SAST) + Trivy (containers) |
 
 ## 🚀 Getting Started
 
 ### Prerequisites
 
 - **Node.js** >= 18.x
-- **Python** >= 3.10
 - **Docker** & **Docker Compose**
-- **Terraform** >= 1.5
-- **AWS CLI** configured for `ap-south-1`
-- **kubectl** + **Helm**
+
+### Project Structure
+
+```
+medicore/
+├── apps/
+│   ├── backend/      # NestJS API server
+│   └── frontend/     # Next.js 14 web app
+├── docker-compose.yml
+├── .env.example
+└── README.md
+```
 
 ### Local Development
 
@@ -186,37 +185,31 @@ The platform is built as **7 independently deployable modules**, each with its o
 git clone https://github.com/Roy005/medicore.git
 cd medicore
 
-# Start local services (PostgreSQL, Redis, Keycloak)
+# Create your environment file
+cp .env.example .env
+
+# Start PostgreSQL & Redis
 docker-compose up -d
 
-# Install backend dependencies
-cd backend
+# Verify services are healthy
+docker-compose ps
+
+# Install backend dependencies & start
+cd apps/backend
 npm install
-
-# Run database migrations
-npm run migration:run
-
-# Start the API server
 npm run dev
 
 # In a new terminal — start the frontend
-cd frontend
+cd apps/frontend
 npm install
 npm run dev
 ```
 
-### Infrastructure Deployment
+### Stopping Services
 
 ```bash
-# Initialize Terraform
-cd infrastructure/terraform
-terraform init
-
-# Preview changes
-terraform plan
-
-# Deploy (requires AWS credentials)
-terraform apply
+docker-compose down        # stop containers
+docker-compose down -v     # stop + remove volumes (reset data)
 ```
 
 ## 🔒 Security & Compliance

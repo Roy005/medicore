@@ -1,0 +1,9 @@
+{
+  "name": "@medicore/frontend",
+  "version": "0.0.1",
+  "description": "MediCore Frontend — Next.js 14 App",
+  "private": true,
+  "scripts": {
+    "dev": "echo 'Next.js app not scaffolded yet — run Task 2 first'"
+  }
+}
