@@ -50,6 +50,27 @@ services:
       retries: 5
       start_period: 5s
 
+  # ── AI Service (Python FastAPI) ───────────────────────────────
+  ai-service:
+    build:
+      context: ./apps/ai-service
+      dockerfile: Dockerfile
+    container_name: medicore-ai-service
+    restart: unless-stopped
+    ports:
+      - "${AI_SERVICE_PORT:-8001}:8001"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-medicore}:${POSTGRES_PASSWORD:-medicore_secret}@postgres:5432/${POSTGRES_DB:-medicore}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      PORT: 8001
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - medicore-network
+
   # ── Backend (NestJS) — placeholder ─────────────────────────────
   # Uncomment once the NestJS app is scaffolded (Task 2+)
   #

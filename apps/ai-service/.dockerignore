@@ -1,0 +1,8 @@
+# Don't copy venv or Python cache into Docker
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+.git/
