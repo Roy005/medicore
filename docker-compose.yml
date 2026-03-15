@@ -22,6 +22,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-medicore_secret}
     volumes:
       - medicore_pgdata:/var/lib/postgresql/data
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
     networks:
       - medicore-network
     healthcheck:
