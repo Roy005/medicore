@@ -5,3 +5,4 @@ export { AuditLog } from './audit-log.entity';
 export { Allergy, AllergySeverity } from './allergy.entity';
 export { Medication } from './medication.entity';
 export { AccessToken, AccessType } from './access-token.entity';
+export { Document, DocumentType } from './document.entity';
