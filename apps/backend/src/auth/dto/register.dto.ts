@@ -1,4 +1,5 @@
-import { IsEmail, IsNotEmpty, IsString, MinLength, IsUUID } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsString, MinLength, IsUUID, IsOptional, IsEnum } from 'class-validator';
+import { UserRole } from '../../entities';
 
 export class RegisterDto {
   @IsEmail()
@@ -9,6 +10,18 @@ export class RegisterDto {
   password!: string;
 
   @IsUUID()
-  @IsNotEmpty()
-  tenantId!: string;
+  @IsOptional()
+  tenantId?: string;
+
+  @IsString()
+  @IsOptional()
+  firstName?: string;
+
+  @IsString()
+  @IsOptional()
+  lastName?: string;
+
+  @IsEnum(UserRole)
+  @IsOptional()
+  role?: UserRole;
 }

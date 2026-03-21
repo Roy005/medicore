@@ -12,7 +12,7 @@ import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import Redis from 'ioredis';
 
-import { User, UserRole, PatientProfile, AuditLog } from '../entities';
+import { User, UserRole, PatientProfile, AuditLog, Tenant } from '../entities';
 import { REDIS_CLIENT } from '../redis/redis.module';
 import { RegisterDto, LoginDto, RefreshDto } from './dto';
 import { JwtPayload } from './jwt.strategy';
@@ -49,18 +49,37 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(dto.password, this.bcryptRounds);
 
+    let tenantId = dto.tenantId;
+    if (!tenantId) {
+      const tenants = await this.dataSource.manager.find(Tenant, {
+        order: { created_at: 'ASC' },
+        take: 1,
+      });
+      const defaultTenant = tenants[0];
+      if (!defaultTenant) {
+        throw new ConflictException('No default tenant found');
+      }
+      tenantId = defaultTenant.id;
+    }
+
+    const resolvedTenantId = tenantId; // guaranteed string at this point
+
     // Use a transaction: create user + patient_profile atomically
     const result = await this.dataSource.transaction(async (manager) => {
       const user = manager.create(User, {
         email: dto.email,
         password_hash: passwordHash,
-        tenant_id: dto.tenantId,
-        role: UserRole.PATIENT,
+        tenant_id: resolvedTenantId,
+        role: dto.role || UserRole.PATIENT,
       });
       const savedUser = await manager.save(user);
 
       const profile = manager.create(PatientProfile, {
         user_id: savedUser.id,
+        demographics: {
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+        },
       });
       await manager.save(profile);
 
