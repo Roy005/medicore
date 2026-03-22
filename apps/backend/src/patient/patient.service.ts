@@ -19,6 +19,7 @@ import {
   CreateMedicationDto,
   CreateAllergyDto,
 } from './patient.dto';
+import { EmergencyService } from '../emergency/emergency.service';
 
 @Injectable()
 export class PatientService {
@@ -33,6 +34,7 @@ export class PatientService {
     private readonly allergyRepo: Repository<Allergy>,
     @InjectRepository(AccessToken)
     private readonly accessTokenRepo: Repository<AccessToken>,
+    private readonly emergencyService: EmergencyService,
   ) {}
 
   private async authorizeAccess(patientId: string, user: any) {
@@ -79,7 +81,14 @@ export class PatientService {
       if (!profile) throw new NotFoundException('Patient profile not found');
 
       await this.profileRepo.update({ id: patientId }, dto);
-      return this.profileRepo.findOne({ where: { id: patientId } });
+      const updated = await this.profileRepo.findOne({ where: { id: patientId } });
+
+      // Auto-refresh emergency snapshot (fire-and-forget)
+      this.emergencyService.refreshSnapshot(patientId).catch((err) =>
+        this.logger.warn(`Emergency snapshot refresh failed: ${err.message}`),
+      );
+
+      return updated;
     } catch (e) {
       if (e instanceof NotFoundException || e instanceof ForbiddenException) throw e;
       this.logger.error(`updateProfile error: ${e.message}`, e.stack);
@@ -107,7 +116,14 @@ export class PatientService {
         patient_id: patientId,
         prescribed_by: user.role === 'doctor' ? user.userId : null,
       });
-      return await this.medicationRepo.save(medication);
+      const saved = await this.medicationRepo.save(medication);
+
+      // Auto-refresh emergency snapshot (fire-and-forget)
+      this.emergencyService.refreshSnapshot(patientId).catch((err) =>
+        this.logger.warn(`Emergency snapshot refresh failed: ${err.message}`),
+      );
+
+      return saved;
     } catch (e) {
       if (e instanceof ForbiddenException) throw e;
       this.logger.error(`addMedication error: ${e.message}`, e.stack);
@@ -134,7 +150,14 @@ export class PatientService {
         ...dto,
         patient_id: patientId,
       });
-      return await this.allergyRepo.save(allergy);
+      const saved = await this.allergyRepo.save(allergy);
+
+      // Auto-refresh emergency snapshot (fire-and-forget)
+      this.emergencyService.refreshSnapshot(patientId).catch((err) =>
+        this.logger.warn(`Emergency snapshot refresh failed: ${err.message}`),
+      );
+
+      return saved;
     } catch (e) {
       if (e instanceof ForbiddenException) throw e;
       this.logger.error(`addAllergy error: ${e.message}`, e.stack);

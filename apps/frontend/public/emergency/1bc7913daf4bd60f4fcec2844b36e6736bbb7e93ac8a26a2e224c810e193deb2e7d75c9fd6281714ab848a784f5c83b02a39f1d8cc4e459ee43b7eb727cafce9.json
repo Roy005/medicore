@@ -1,0 +1,35 @@
+{
+  "patientName": "Emergtest_1223813093",
+  "bloodGroup": null,
+  "allergies": [
+    {
+      "allergen": "Penicillin",
+      "severity": "severe",
+      "reaction": "Anaphylaxis"
+    },
+    {
+      "allergen": "Aspirin",
+      "severity": "moderate",
+      "reaction": "Rash"
+    }
+  ],
+  "activeMedications": [
+    {
+      "drugName": "Metformin",
+      "dosage": "500mg",
+      "frequency": "twice daily"
+    }
+  ],
+  "chronicConditions": [],
+  "emergencyContacts": [],
+  "lastVitalsSnapshot": {
+    "bp": null,
+    "hr": null,
+    "spo2": null,
+    "glucose": null,
+    "recordedAt": null
+  },
+  "aiWarningFlags": [],
+  "generatedAt": "2026-03-21T21:01:58.458Z",
+  "warningMessage": "This data was last updated at 3/21/2026, 9:01:58 PM"
+}

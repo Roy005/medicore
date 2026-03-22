@@ -4,12 +4,14 @@ import { PatientController } from './patient.controller';
 import { PatientService } from './patient.service';
 import { AuditMiddleware } from './audit.middleware';
 import { AuthModule } from '../auth/auth.module';
+import { EmergencyModule } from '../emergency/emergency.module';
 import { PatientProfile, Medication, Allergy, AccessToken, AuditLog } from '../entities';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([PatientProfile, Medication, Allergy, AccessToken, AuditLog]),
-    AuthModule
+    AuthModule,
+    EmergencyModule,
   ],
   controllers: [PatientController],
   providers: [PatientService]
