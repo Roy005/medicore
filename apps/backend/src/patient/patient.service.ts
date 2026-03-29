@@ -60,6 +60,19 @@ export class PatientService {
     }
   }
 
+  // ─── PROFILE BY USER ID (for /me/profile) ─────────────────
+  async getProfileByUserId(userId: string) {
+    try {
+      const profile = await this.profileRepo.findOne({ where: { user_id: userId } });
+      if (!profile) throw new NotFoundException('Patient profile not found');
+      return profile;
+    } catch (e) {
+      if (e instanceof NotFoundException) throw e;
+      this.logger.error(`getProfileByUserId error: ${e.message}`, e.stack);
+      throw new InternalServerErrorException('Database error occurred while fetching profile');
+    }
+  }
+
   // ─── PROFILE ───────────────────────────────────────────────
   async getProfile(patientId: string, user: any) {
     await this.authorizeAccess(patientId, user);

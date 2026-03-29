@@ -12,9 +12,10 @@ import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import Redis from 'ioredis';
 
-import { User, UserRole, PatientProfile, AuditLog, Tenant } from '../entities';
+import { User, UserRole, PatientProfile, AuditLog, Tenant, DoctorProfile } from '../entities';
 import { REDIS_CLIENT } from '../redis/redis.module';
 import { RegisterDto, LoginDto, RefreshDto } from './dto';
+import { RegisterDoctorDto } from '../doctor/doctor.dto';
 import { JwtPayload } from './jwt.strategy';
 
 @Injectable()
@@ -103,6 +104,79 @@ export class AuthService {
       role: result.role,
       tenantId: result.tenant_id,
       createdAt: result.created_at,
+    };
+  }
+
+  // ─── REGISTER DOCTOR ───────────────────────────────────────
+  async registerDoctor(dto: RegisterDoctorDto, ip?: string) {
+    // Check for existing user
+    const exists = await this.userRepo.findOne({ where: { email: dto.email } });
+    if (exists) {
+      throw new ConflictException('Email already registered');
+    }
+
+    const passwordHash = await bcrypt.hash(dto.password, this.bcryptRounds);
+
+    let tenantId = dto.tenantId;
+    if (!tenantId) {
+      const tenants = await this.dataSource.manager.find(Tenant, {
+        order: { created_at: 'ASC' },
+        take: 1,
+      });
+      const defaultTenant = tenants[0];
+      if (!defaultTenant) {
+        throw new ConflictException('No default tenant found');
+      }
+      tenantId = defaultTenant.id;
+    }
+
+    const resolvedTenantId = tenantId;
+
+    // Transaction: create user + doctor_profile atomically
+    const result = await this.dataSource.transaction(async (manager) => {
+      const user = manager.create(User, {
+        email: dto.email,
+        password_hash: passwordHash,
+        tenant_id: resolvedTenantId,
+        role: UserRole.DOCTOR,
+      });
+      const savedUser = await manager.save(user);
+
+      const doctorProfile = manager.create(DoctorProfile, {
+        user_id: savedUser.id,
+        specialty: dto.specialty,
+        registration_number: dto.registrationNumber,
+        hospital_affiliation: dto.hospitalAffiliation || null,
+      });
+      await manager.save(doctorProfile);
+
+      // Audit log
+      const audit = manager.create(AuditLog, {
+        event_type: 'DOCTOR_REGISTERED',
+        actor_user_id: savedUser.id,
+        ip_address: ip ?? null,
+        resource_type: 'user',
+      });
+      await manager.save(audit);
+
+      return { user: savedUser, doctorProfile };
+    });
+
+    this.logger.log(`Doctor registered: ${result.user.id}`);
+
+    return {
+      id: result.user.id,
+      email: result.user.email,
+      role: result.user.role,
+      tenantId: result.user.tenant_id,
+      createdAt: result.user.created_at,
+      doctorProfile: {
+        id: result.doctorProfile.id,
+        specialty: result.doctorProfile.specialty,
+        registrationNumber: result.doctorProfile.registration_number,
+        hospitalAffiliation: result.doctorProfile.hospital_affiliation,
+        verificationStatus: result.doctorProfile.verification_status,
+      },
     };
   }
 

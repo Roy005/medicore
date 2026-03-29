@@ -2,67 +2,93 @@
 @tailwind components;
 @tailwind utilities;
 
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
 @layer base {
   :root {
-    --background: 210 40% 98%;
-    --foreground: 222.2 84% 4.9%;
+    /* ─── Stitch "Vitalis Clinical" Design Tokens ─── */
+    --background: 195 20% 98%;           /* #f8fafb */
+    --foreground: 200 12% 10%;           /* #191c1d */
 
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;                   /* #ffffff */
+    --card-foreground: 200 12% 10%;      /* #191c1d */
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover-foreground: 200 12% 10%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    --primary: 180 100% 17%;             /* #005454 */
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --primary-container: 180 82% 24%;    /* #0d6e6e */
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --secondary: 216 26% 40%;            /* #4c5f7e */
+    --secondary-foreground: 213 79% 93%; /* #d5e3ff */
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --muted: 200 11% 95%;               /* #f2f4f5 */
+    --muted-foreground: 180 10% 35%;    /* #3e4948 */
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --accent: 200 11% 95%;
+    --accent-foreground: 200 12% 10%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --destructive: 0 70% 41%;            /* #ba1a1a */
+    --destructive-foreground: 0 0% 100%;
 
-    --radius: 0.75rem;
+    --border: 192 8% 77%;               /* #bec9c8 at 15% opacity simulated */
+    --input: 200 5% 89%;                /* #e1e3e4 */
+    --ring: 180 100% 17%;               /* #005454 */
+
+    --radius: 0.5rem;
+
+    /* ─── Extended Stitch Palette ─── */
+    --surface: #f8fafb;
+    --surface-container: #eceeef;
+    --surface-container-low: #f2f4f5;
+    --surface-container-high: #e6e8e9;
+    --surface-container-highest: #e1e3e4;
+    --on-surface: #191c1d;
+    --on-surface-variant: #3e4948;
+    --outline: #6e7979;
+    --outline-variant: #bec9c8;
+    --teal-primary: #005454;
+    --teal-container: #0d6e6e;
+    --coral: #E8533A;
+    --coral-container: #b7301b;
+    --sage-green: #4CAF82;
+    --error: #ba1a1a;
+    --error-container: #ffdad6;
+    --tertiary: #951604;
+    --tertiary-container: #b7301b;
+    --secondary-container: #c7dbff;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
+    --background: 200 12% 10%;
+    --foreground: 195 20% 98%;
 
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
+    --card: 210 15% 12%;
+    --card-foreground: 195 20% 98%;
 
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 210 15% 12%;
+    --popover-foreground: 195 20% 98%;
 
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
+    --primary: 180 38% 80%;               /* #84d4d3 */
+    --primary-foreground: 180 100% 17%;
 
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 216 26% 40%;
+    --secondary-foreground: 213 79% 93%;
 
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
+    --muted: 210 20% 15%;
+    --muted-foreground: 200 9% 55%;
 
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
+    --accent: 210 20% 15%;
+    --accent-foreground: 195 20% 98%;
 
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 50% 35%;
+    --destructive-foreground: 195 20% 98%;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    --border: 210 20% 18%;
+    --input: 210 20% 18%;
+    --ring: 180 38% 80%;
   }
 }
 
@@ -72,10 +98,39 @@
   }
   body {
     @apply text-foreground;
-    /* Beautiful glassmorphism vibrant background */
-    background: linear-gradient(135deg, #e0f2fe 0%, #fae8ff 50%, #dbeafe 100%);
-    background-size: cover;
-    background-attachment: fixed;
+    background-color: var(--surface);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
+  .font-mono, [style*="JetBrains"] {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace !important;
+  }
+}
+
+/* ─── Stitch Design System Utilities ─── */
+@layer utilities {
+  .surface-base { background-color: var(--surface); }
+  .surface-container { background-color: var(--surface-container); }
+  .surface-container-low { background-color: var(--surface-container-low); }
+  .surface-container-high { background-color: var(--surface-container-high); }
+  .surface-lowest { background-color: #ffffff; }
+  .text-on-surface { color: var(--on-surface); }
+  .text-on-surface-variant { color: var(--on-surface-variant); }
+  .text-outline { color: var(--outline); }
+
+  /* Ambient shadow per design system */
+  .shadow-ambient {
+    box-shadow: 0px 12px 32px rgba(25, 28, 29, 0.04);
+  }
+
+  /* CTA gradient */
+  .bg-cta-gradient {
+    background: linear-gradient(135deg, var(--teal-primary), var(--teal-container));
+  }
+
+  /* No scrollbar */
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 }

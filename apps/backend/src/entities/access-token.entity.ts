@@ -6,6 +6,8 @@ export enum AccessType {
   EMERGENCY = 'emergency',
   READ_ONLY = 'read_only',
   FULL = 'full',
+  CLINICAL_READ = 'clinical_read',
+  CLINICAL_WRITE = 'clinical_write',
 }
 
 @Entity('access_tokens')
@@ -20,10 +22,10 @@ export class AccessToken {
   @JoinColumn({ name: 'patient_id' })
   patient: PatientProfile;
 
-  @Column({ type: 'uuid' })
-  granted_to_user_id: string;
+  @Column({ type: 'uuid', nullable: true })
+  granted_to_user_id: string | null;
 
-  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @ManyToOne(() => User, { onDelete: 'CASCADE', nullable: true })
   @JoinColumn({ name: 'granted_to_user_id' })
   granted_to_user: User;
 
@@ -42,3 +44,4 @@ export class AccessToken {
   @Column({ type: 'timestamptz', nullable: true })
   revoked_at: Date;
 }
+

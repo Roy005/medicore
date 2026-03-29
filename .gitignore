@@ -6,6 +6,8 @@
 *.docx
 *.pdf
 docs/internal/
+ARCHITECTURE.md
+MEMORY.md
 
 # Dependencies
 node_modules/

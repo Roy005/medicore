@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto, LoginDto, RefreshDto } from './dto';
+import { RegisterDoctorDto } from '../doctor/doctor.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 
 interface AuthenticatedRequest {
@@ -30,6 +31,11 @@ export class AuthController {
   @Post('register')
   async register(@Body() dto: RegisterDto, @Ip() ip: string) {
     return this.authService.register(dto, ip);
+  }
+
+  @Post('register/doctor')
+  async registerDoctor(@Body() dto: RegisterDoctorDto, @Ip() ip: string) {
+    return this.authService.registerDoctor(dto, ip);
   }
 
   @Post('login')

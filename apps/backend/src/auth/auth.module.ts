@@ -4,7 +4,7 @@ import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
-import { User, PatientProfile, AuditLog, Tenant } from '../entities';
+import { User, PatientProfile, AuditLog, Tenant, DoctorProfile } from '../entities';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
@@ -22,7 +22,7 @@ import { RolesGuard } from './roles.guard';
         signOptions: { expiresIn: '24h' },
       }),
     }),
-    TypeOrmModule.forFeature([User, PatientProfile, AuditLog, Tenant]),
+    TypeOrmModule.forFeature([User, PatientProfile, AuditLog, Tenant, DoctorProfile]),
   ],
   providers: [AuthService, JwtStrategy, JwtAuthGuard, RolesGuard],
   controllers: [AuthController],

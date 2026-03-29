@@ -7,3 +7,7 @@ export { Medication } from './medication.entity';
 export { AccessToken, AccessType } from './access-token.entity';
 export { Document, DocumentType } from './document.entity';
 export { Vital } from './vital.entity';
+export { DoctorProfile, VerificationStatus } from './doctor-profile.entity';
+export { ClinicalNote } from './clinical-note.entity';
+export { Diagnosis, DiagnosisStatus } from './diagnosis.entity';
+export { Alert, AlertTier, AlertStatus } from './alert.entity';
