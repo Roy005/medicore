@@ -19,6 +19,13 @@ import { UserRole } from '../entities';
 export class DoctorController {
   constructor(private readonly doctorService: DoctorService) {}
 
+  /** GET /api/v1/doctors/my-patients — get patients under doctor care */
+  @Get('my-patients')
+  @Roles(UserRole.DOCTOR)
+  async getMyPatients(@Req() req: any) {
+    return this.doctorService.getMyPatients(req.user);
+  }
+
   /** GET /api/v1/doctors/:id/profile — doctor's own profile */
   @Get(':id/profile')
   @Roles(UserRole.DOCTOR)

@@ -32,6 +32,13 @@ export default function AIAdvisorPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Auto-fill patient ID for self
+  useEffect(() => {
+    if (user?.id && !patientId) {
+      handleSetPatient(user.id);
+    }
+  }, [user]);
+
   const fetchRiskScores = useCallback(async (pid: string) => {
     try {
       const res = await api.get(`/patients/${pid}/ai/risk-scores`);
@@ -63,19 +70,25 @@ export default function AIAdvisorPage() {
     setLoading(true);
 
     try {
-      const res = await api.post('/ai/advisor/chat', {
-        patientId,
+      // Map previous messages to conversationHistory format requested by backend
+      const conversationHistory = messages
+        .filter(m => m.role !== 'system') // Maybe exclude system? Or Keep it
+        .map(m => ({ role: m.role, content: m.content }));
+
+      const res = await api.post(`/patients/${patientId}/ai/chat`, {
         message: input,
+        conversationHistory,
       });
 
       const assistantMsg: Message = {
         role: 'assistant',
-        content: res.data.response,
-        safetyFlags: res.data.safetyFlags,
+        content: res.data.reply,
+        safetyFlags: res.data.safetyFlag ? ['Safety Alert Triggered'] : undefined,
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, assistantMsg]);
     } catch (err: any) {
+      console.error(err);
       setMessages((prev) => [
         ...prev,
         {
@@ -222,13 +235,13 @@ export default function AIAdvisorPage() {
           <h3 className="font-semibold text-[#191c1d] text-sm mb-3">Risk Assessment</h3>
           {riskScores ? (
             <div className="space-y-4">
-              {['cardiovascular', 'type2Diabetes'].map((key) => {
+              {['cardiovascular', 'diabetes'].map((key) => {
                 const score = riskScores[key];
                 if (!score) return null;
                 return (
                   <div key={key}>
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs text-[#3e4948] capitalize">{key === 'type2Diabetes' ? 'Type 2 Diabetes' : key}</span>
+                      <span className="text-xs text-[#3e4948] capitalize">{key === 'diabetes' ? 'Diabetes' : key}</span>
                       <span className={`text-xs font-bold uppercase ${riskColor(score.level)}`}>{score.level}</span>
                     </div>
                     <div className="w-full bg-[#e6e8e9] rounded-full h-2">
@@ -246,7 +259,7 @@ export default function AIAdvisorPage() {
                   </div>
                 );
               })}
-              <p className="text-[10px] text-[#bec9c8] italic">{riskScores.disclaimer}</p>
+              <p className="text-[10px] text-[#bec9c8] italic">{riskScores.cardiovascular?.explanation || riskScores.disclaimer}</p>
             </div>
           ) : (
             <p className="text-xs text-[#6e7979]">{patientId ? 'Loading...' : 'Enter a Patient ID to view risk scores.'}</p>

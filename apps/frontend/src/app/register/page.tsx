@@ -11,6 +11,9 @@ export default function RegisterPage() {
   const [password, setPassword] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [role, setRole] = useState<'patient' | 'doctor'>('patient');
+  const [specialty, setSpecialty] = useState('');
+  const [registrationNumber, setRegistrationNumber] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -21,9 +24,15 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      await api.post('/auth/register', { 
-        email, password, role: 'patient', firstName, lastName 
-      });
+      if (role === 'patient') {
+        await api.post('/auth/register', { 
+          email, password, role: 'patient', firstName, lastName 
+        });
+      } else {
+        await api.post('/auth/register/doctor', {
+          email, password, specialty, registrationNumber, firstName, lastName
+        });
+      }
       router.push(`/login?email=${encodeURIComponent(email.trim())}`);
     } catch (err: unknown) {
       const errorObj = err as { response?: { data?: { message?: string | string[] } } };
@@ -92,9 +101,34 @@ export default function RegisterPage() {
           </div>
 
           <h2 className="text-2xl font-bold text-[#191c1d] mb-1">Create your account</h2>
-          <p className="text-sm text-[#6e7979] mb-8">
+          <p className="text-sm text-[#6e7979] mb-6">
             Secure clinical-grade infrastructure for your personal health data.
           </p>
+
+          <div className="flex bg-[#e1e3e4] rounded-lg p-1 mb-6">
+            <button
+              type="button"
+              onClick={() => setRole('patient')}
+              className={`flex-1 py-2 text-sm font-semibold rounded-md transition-all ${
+                role === 'patient' 
+                  ? 'bg-white text-[#005454] shadow-sm' 
+                  : 'text-[#6e7979] hover:text-[#191c1d]'
+              }`}
+            >
+              Patient
+            </button>
+            <button
+              type="button"
+              onClick={() => setRole('doctor')}
+              className={`flex-1 py-2 text-sm font-semibold rounded-md transition-all ${
+                role === 'doctor' 
+                  ? 'bg-white text-[#005454] shadow-sm' 
+                  : 'text-[#6e7979] hover:text-[#191c1d]'
+              }`}
+            >
+              Doctor
+            </button>
+          </div>
 
           <form onSubmit={handleRegister} className="space-y-5">
             <div className="grid grid-cols-2 gap-4">
@@ -160,6 +194,46 @@ export default function RegisterPage() {
                 />
               </div>
             </div>
+
+            {role === 'doctor' && (
+              <>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-[#3e4948]">Medical Specialty</label>
+                  <input
+                    id="register-specialty"
+                    value={specialty}
+                    onChange={(e) => setSpecialty(e.target.value)}
+                    required
+                    placeholder="e.g. Cardiology, Pediatrics"
+                    className="w-full px-4 py-3 rounded-lg text-sm text-[#191c1d] placeholder:text-[#bec9c8] focus:outline-none focus:ring-2 focus:ring-[#005454] transition-all"
+                    style={{ backgroundColor: '#e1e3e4' }}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-[#3e4948]">Registration Number (License Verification)</label>
+                  <input
+                    id="register-reg-number"
+                    value={registrationNumber}
+                    onChange={(e) => setRegistrationNumber(e.target.value)}
+                    required
+                    placeholder="Enter your medical license number"
+                    className="w-full px-4 py-3 rounded-lg text-sm text-[#191c1d] placeholder:text-[#bec9c8] focus:outline-none focus:ring-2 focus:ring-[#005454] transition-all"
+                    style={{ backgroundColor: '#e1e3e4' }}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-[#3e4948]">Upload License Document</label>
+                  <input
+                    id="register-license-upload"
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg,.png"
+                    required
+                    className="w-full px-4 py-3 rounded-lg text-sm text-[#6e7979] file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-[#005454]/10 file:text-[#005454] hover:file:bg-[#005454]/20 transition-all cursor-pointer"
+                    style={{ backgroundColor: '#e1e3e4' }}
+                  />
+                </div>
+              </>
+            )}
 
             {error && (
               <div className="px-4 py-2.5 rounded-lg bg-[#ffdad6] text-[#ba1a1a] text-sm font-medium">

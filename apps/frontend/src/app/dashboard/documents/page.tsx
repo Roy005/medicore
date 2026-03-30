@@ -26,6 +26,7 @@ export default function DocumentsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [patientId, setPatientId] = useState<string | null>(null);
+  const [previewDoc, setPreviewDoc] = useState<{ name: string, type: string, url: string, loading: boolean } | null>(null);
 
   const fetchProfile = useCallback(async () => {
     try {
@@ -39,7 +40,17 @@ export default function DocumentsPage() {
   const fetchDocuments = useCallback(async (pid: string) => {
     try {
       const res = await api.get(`/patients/${pid}/documents`);
-      setDocuments(Array.isArray(res.data) ? res.data : []);
+      const mappedDocs = (Array.isArray(res.data) ? res.data : []).map(row => ({
+        id: row.id,
+        fileName: row.original_name || row.filename || 'Unknown Document',
+        fileType: row.mimetype || 'application/octet-stream',
+        category: row.document_type === 'lab_report' ? 'Lab Results' :
+                  row.document_type === 'scan' ? 'Imaging' :
+                  row.document_type === 'prescription' ? 'Prescriptions' : 'Other',
+        uploadedAt: row.upload_date || row.created_at || new Date().toISOString(),
+        fileSize: Number(row.size_bytes) || 0
+      }));
+      setDocuments(mappedDocs);
     } catch { setDocuments([]); }
     setLoading(false);
   }, []);
@@ -77,6 +88,42 @@ export default function DocumentsPage() {
       await api.delete(`/patients/${patientId}/documents/${docId}`);
       setDocuments(documents.filter(d => d.id !== docId));
     } catch { alert('Failed to delete document.'); }
+  };
+
+  const handlePreview = async (doc: Document) => {
+    if (!patientId) return;
+    setPreviewDoc({ name: doc.fileName, type: doc.fileType, url: '', loading: true });
+    try {
+      const res = await api.get(`/patients/${patientId}/documents/${doc.id}`, { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data);
+      setPreviewDoc({ name: doc.fileName, type: doc.fileType, url, loading: false });
+    } catch {
+      alert('Failed to load document preview.');
+      setPreviewDoc(null);
+    }
+  };
+
+  const closePreview = () => {
+    if (previewDoc?.url) URL.revokeObjectURL(previewDoc.url);
+    setPreviewDoc(null);
+  };
+
+  const handleDownload = async (doc: Document, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!patientId) return;
+    try {
+      const res = await api.get(`/patients/${patientId}/documents/${doc.id}`, { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = doc.fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      alert('Failed to download document.');
+    }
   };
 
   const filteredDocs = documents.filter(d => {
@@ -155,7 +202,11 @@ export default function DocumentsPage() {
         ) : (
           <div className="divide-y divide-[#f2f4f5]">
             {filteredDocs.map((doc) => (
-              <div key={doc.id} className="flex items-center gap-4 px-6 py-4 hover:bg-[#f8fafb] transition-colors">
+              <div 
+                key={doc.id} 
+                className="flex items-center gap-4 px-6 py-4 hover:bg-[#f8fafb] transition-colors cursor-pointer"
+                onClick={() => handlePreview(doc)}
+              >
                 <div className="w-10 h-10 rounded-lg bg-[#f2f4f5] flex items-center justify-center flex-shrink-0">
                   {getFileIcon(doc.fileType)}
                 </div>
@@ -172,10 +223,18 @@ export default function DocumentsPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button className="p-2 rounded-lg hover:bg-[#f2f4f5] text-[#6e7979] hover:text-[#005454] transition-colors">
+                  <button 
+                    onClick={(e) => handleDownload(doc, e)} 
+                    className="p-2 rounded-lg hover:bg-[#f2f4f5] text-[#6e7979] hover:text-[#005454] transition-colors"
+                    title="Download document"
+                  >
                     <Download className="w-4 h-4" />
                   </button>
-                  <button onClick={() => handleDelete(doc.id)} className="p-2 rounded-lg hover:bg-[#ffdad6] text-[#6e7979] hover:text-[#ba1a1a] transition-colors">
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); handleDelete(doc.id); }} 
+                    className="p-2 rounded-lg hover:bg-[#ffdad6] text-[#6e7979] hover:text-[#ba1a1a] transition-colors"
+                    title="Delete document"
+                  >
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
@@ -206,6 +265,60 @@ export default function DocumentsPage() {
                 <div className="mt-4 flex items-center gap-2 text-sm text-[#005454]">
                   <div className="w-4 h-4 border-2 border-[#005454] border-t-transparent rounded-full animate-spin" />
                   Uploading...
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Preview Modal */}
+      {previewDoc && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-[#e6e8e9] bg-[#f8fafb]">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded bg-white flex items-center justify-center shadow-sm">
+                  {getFileIcon(previewDoc.type)}
+                </div>
+                <h2 className="text-base font-bold text-[#191c1d] truncate max-w-[300px] sm:max-w-md" title={previewDoc.name}>{previewDoc.name}</h2>
+              </div>
+              <div className="flex items-center gap-2">
+                {!previewDoc.loading && (
+                  <button 
+                    onClick={() => {
+                      const a = document.createElement('a'); 
+                      a.href = previewDoc.url; 
+                      a.download = previewDoc.name; 
+                      a.click();
+                    }} 
+                    className="p-2 rounded-full hover:bg-[#e1e3e4] text-[#6e7979] hover:text-[#005454] transition-colors"
+                  >
+                    <Download className="w-5 h-5" />
+                  </button>
+                )}
+                <button onClick={closePreview} className="p-2 rounded-full hover:bg-[#e1e3e4] text-[#6e7979] hover:text-[#191c1d] transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 bg-[#e1e3e4] relative overflow-auto flex items-center justify-center">
+              {previewDoc.loading ? (
+                <div className="flex flex-col items-center gap-3 text-[#6e7979]">
+                  <div className="w-8 h-8 border-4 border-[#005454] border-t-transparent rounded-full animate-spin" />
+                  <p className="text-sm font-medium">Loading document...</p>
+                </div>
+              ) : previewDoc.type.includes('image') ? (
+                <img src={previewDoc.url} alt={previewDoc.name} className="max-w-full max-h-full object-contain" />
+              ) : previewDoc.type.includes('pdf') ? (
+                <iframe src={previewDoc.url} className="w-full h-full border-none" title={previewDoc.name} />
+              ) : (
+                <div className="text-center p-8 bg-white rounded-lg shadow-sm">
+                  <File className="w-16 h-16 mx-auto text-[#bec9c8] mb-4" />
+                  <p className="text-[#191c1d] font-medium">No preview available</p>
+                  <p className="text-sm text-[#6e7979] mt-2 max-w-xs mx-auto">
+                    This file type ({previewDoc.type}) cannot be previewed directly in the browser. Please download it to view.
+                  </p>
                 </div>
               )}
             </div>

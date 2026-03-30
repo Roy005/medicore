@@ -1,6 +1,6 @@
 'use client';
-
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import api from '@/lib/api';
 import { getMyProfile } from '@/lib/patient';
@@ -17,6 +17,13 @@ export default function DashboardOverviewPage() {
   const [alerts, setAlerts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [patientId, setPatientId] = useState<string | null>(null);
+  const router = useRouter();
+
+  useEffect(() => {
+    if (user?.role === 'doctor' || user?.role === 'hospital_admin') {
+      router.push('/dashboard/doctor');
+    }
+  }, [user, router]);
 
   const fetchData = useCallback(async () => {
     try {

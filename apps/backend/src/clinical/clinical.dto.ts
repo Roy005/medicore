@@ -25,6 +25,10 @@ export class CreateNoteDto {
   @IsUUID()
   @IsOptional()
   amendedNoteId?: string;
+
+  @IsString()
+  @IsOptional()
+  additionalNotes?: string;
 }
 
 /** POST /patients/:id/diagnoses */

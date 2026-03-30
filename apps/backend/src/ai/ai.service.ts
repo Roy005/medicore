@@ -1,221 +1,380 @@
-import {
-  Injectable,
-  Logger,
-  Inject,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import Redis from 'ioredis';
+import { ConfigService } from '@nestjs/config';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
-import { AuditLog, Medication, Allergy } from '../entities';
-import { REDIS_CLIENT } from '../redis/redis.module';
-import { VitalsService } from '../vitals/vitals.service';
+import { Medication, Allergy, Diagnosis, Vital, PatientProfile, AuditLog } from '../entities';
 
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
 
   constructor(
-    @InjectRepository(AuditLog)
-    private readonly auditRepo: Repository<AuditLog>,
     @InjectRepository(Medication)
     private readonly medicationRepo: Repository<Medication>,
     @InjectRepository(Allergy)
     private readonly allergyRepo: Repository<Allergy>,
-    private readonly vitalsService: VitalsService,
-    @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    @InjectRepository(Diagnosis)
+    private readonly diagnosisRepo: Repository<Diagnosis>,
+    @InjectRepository(Vital)
+    private readonly vitalRepo: Repository<Vital>,
+    @InjectRepository(PatientProfile)
+    private readonly profileRepo: Repository<PatientProfile>,
+    @InjectRepository(AuditLog)
+    private readonly auditRepo: Repository<AuditLog>,
+    private readonly configService: ConfigService,
   ) {}
 
-  /** POST /ai/advisor/chat — mock AI chat with patient context */
-  async chat(
-    patientId: string,
-    message: string,
-    doctorId: string,
-    ip?: string,
-  ) {
-    // Gather patient context
-    const [medications, allergies, latestVitals] = await Promise.all([
-      this.medicationRepo.find({
-        where: { patient_id: patientId, is_active: true },
-      }),
-      this.allergyRepo.find({ where: { patient_id: patientId } }),
-      this.vitalsService.getLatestVitals(patientId),
-    ]);
+  private async getPatientContext(patientId: string) {
+    const profile = await this.profileRepo.findOne({ where: { user_id: patientId } });
+    const activeMedications = await this.medicationRepo.find({ where: { patient_id: patientId, is_active: true } });
+    let allergies: Allergy[] = [];
+    try { allergies = await this.allergyRepo.find({ where: { patient_id: patientId } }); } catch(e) {}
+    
+    let activeConditions: Diagnosis[] = [];
+    try { activeConditions = await this.diagnosisRepo.find({ where: { patient_id: patientId, status: 'active' as any } }); } catch(e) {}
 
-    const medList = medications.map((m) => m.drug_name).join(', ') || 'None';
-    const allergyList = allergies.map((a) => a.allergen).join(', ') || 'None';
-
-    // Simulate AI response using patient context
-    const aiResponse = this.generateMockChatResponse(message, medList, allergyList, latestVitals);
-
-    // Audit log
-    await this.auditRepo.save(
-      this.auditRepo.create({
-        event_type: 'ai_chat',
-        actor_user_id: doctorId,
-        patient_id: patientId,
-        ip_address: ip || null,
-        resource_type: 'ai_advisor',
-      }),
+    const metrics = ['heart_rate', 'blood_pressure_systolic', 'blood_pressure_diastolic', 'spo2', 'blood_glucose', 'weight'];
+    const vitalsPromises = metrics.map(metric => 
+      this.vitalRepo.findOne({
+        where: { patient_id: patientId, metric_type: metric },
+        order: { recorded_at: 'DESC' },
+      })
     );
-
-    return {
-      response: aiResponse.text,
-      safetyFlags: aiResponse.safetyFlags,
-      context: {
-        activeMedications: medList,
-        knownAllergies: allergyList,
-      },
+    const resolvedVitals = await Promise.all(vitalsPromises);
+    
+    const latestVitals: Record<string, any> = {
+      heart_rate: null,
+      bp_systolic: null,
+      bp_diastolic: null,
+      spo2: null,
+      glucose: null,
+      weight: null,
     };
-  }
-
-  /** GET /patients/:id/ai/risk-scores — mock risk assessment */
-  async getRiskScores(patientId: string, doctorId: string) {
-    const cacheKey = `ai:risk:${patientId}`;
-    const cached = await this.redis.get(cacheKey);
-    if (cached) return JSON.parse(cached);
-
-    const latestVitals = await this.vitalsService.getLatestVitals(patientId);
-    const medications = await this.medicationRepo.find({
-      where: { patient_id: patientId, is_active: true },
+    
+    resolvedVitals.forEach(v => {
+      if (!v) return;
+      let key = '';
+      if (v.metric_type === 'heart_rate') key = 'heart_rate';
+      if (v.metric_type === 'blood_pressure_systolic') key = 'bp_systolic';
+      if (v.metric_type === 'blood_pressure_diastolic') key = 'bp_diastolic';
+      if (v.metric_type === 'spo2') key = 'spo2';
+      if (v.metric_type === 'blood_glucose') key = 'glucose';
+      if (v.metric_type === 'weight') key = 'weight';
+      if (key) {
+        latestVitals[key] = {
+          value: v.value,
+          unit: v.unit,
+          recordedAt: v.recorded_at,
+        };
+      }
     });
 
-    // Mock risk score calculation
-    let cardiovascularRisk = 15;
-    let diabetesRisk = 10;
-
-    if (latestVitals.bp_systolic?.value > 140) cardiovascularRisk += 25;
-    if (latestVitals.heart_rate?.value > 100) cardiovascularRisk += 10;
-    if (latestVitals.glucose?.value > 200) diabetesRisk += 35;
-    if (medications.some((m) => m.drug_name.toLowerCase().includes('metformin'))) diabetesRisk += 20;
-    if (medications.some((m) => m.drug_name.toLowerCase().includes('statin'))) cardiovascularRisk += 15;
-
-    const result = {
-      cardiovascular: {
-        score: Math.min(cardiovascularRisk, 95),
-        level: cardiovascularRisk > 50 ? 'high' : cardiovascularRisk > 25 ? 'moderate' : 'low',
-        factors: ['Blood pressure trend', 'Medication profile', 'Heart rate variability'],
-      },
-      type2Diabetes: {
-        score: Math.min(diabetesRisk, 95),
-        level: diabetesRisk > 50 ? 'high' : diabetesRisk > 25 ? 'moderate' : 'low',
-        factors: ['Glucose levels', 'Medication profile', 'BMI trend'],
-      },
-      lastUpdated: new Date().toISOString(),
-      disclaimer: 'AI-generated risk assessment. Not a clinical diagnosis. Always verify with clinical judgment.',
-    };
-
-    await this.redis.setex(cacheKey, 3600, JSON.stringify(result));
-
-    // Audit
-    await this.auditRepo.save(
-      this.auditRepo.create({
-        event_type: 'ai_risk_score',
-        actor_user_id: doctorId,
-        patient_id: patientId,
-        resource_type: 'ai_risk',
-      }),
-    );
-
-    return result;
-  }
-
-  /** GET /patients/:id/ai/alerts — combine rule-based + mock AI flags */
-  async getAiAlerts(patientId: string) {
-    const latestVitals = await this.vitalsService.getLatestVitals(patientId);
-    const flags: string[] = [];
-
-    if (latestVitals.glucose?.value > 200) {
-      flags.push('Persistent hyperglycemia detected — consider HbA1c test');
-    }
-    if (latestVitals.bp_systolic?.value > 140) {
-      flags.push('Sustained hypertension — review antihypertensive regimen');
-    }
-    if (latestVitals.spo2?.value && latestVitals.spo2.value < 95) {
-      flags.push('Declining SpO2 trend — pulmonary evaluation recommended');
-    }
-
-    // Always add a generic mock flag for demo
-    if (flags.length === 0) {
-      flags.push('No immediate AI-flagged concerns. Continue monitoring.');
+    let age: number | null = null;
+    if (profile && profile.date_of_birth) {
+      const dob = new Date(profile.date_of_birth);
+      const diff = Date.now() - dob.getTime();
+      age = Math.floor(diff / (1000 * 60 * 60 * 24 * 365.25));
     }
 
     return {
-      flags,
-      generatedAt: new Date().toISOString(),
-      disclaimer: 'AI-generated alerts. Clinical validation required.',
+      bloodGroup: profile?.blood_group || 'Unknown',
+      age,
+      activeMedications: activeMedications.map(m => ({
+        name: m.drug_name,
+        dosage: m.dosage,
+        frequency: m.frequency,
+      })),
+      allergies: allergies.map(a => ({
+        allergen: a.allergen,
+        severity: a.severity,
+        reaction: a.reaction_description,
+      })),
+      activeConditions: activeConditions.map(c => ({
+        icd10_code: c.icd10_code,
+        description: c.icd10_description,
+      })),
+      latestVitals,
     };
   }
 
-  /** POST /patients/:id/ai/preconsult-brief — mock summary */
-  async getPreconsultBrief(patientId: string, doctorId: string) {
-    const cacheKey = `ai:preconsult:${patientId}`;
-    const cached = await this.redis.get(cacheKey);
-    if (cached) return JSON.parse(cached);
+  async chat(patientId: string, message: string, conversationHistory: {role: string, content: string}[]) {
+    try {
+      const context = await this.getPatientContext(patientId);
 
-    const [medications, allergies, latestVitals] = await Promise.all([
-      this.medicationRepo.find({ where: { patient_id: patientId, is_active: true } }),
-      this.allergyRepo.find({ where: { patient_id: patientId } }),
-      this.vitalsService.getLatestVitals(patientId),
-    ]);
+      const contextString = `
+Blood Type: ${context.bloodGroup}
+Age: ${context.age ?? 'Unknown'}
 
-    const brief = {
-      summary: `Patient has ${medications.length} active medication(s) and ${allergies.length} known allergy/allergies. Recent vitals are within monitoring range.`,
-      keyPoints: [
-        `Active medications: ${medications.map((m) => m.drug_name).join(', ') || 'None'}`,
-        `Known allergies: ${allergies.map((a) => `${a.allergen} (${a.severity})`).join(', ') || 'None'}`,
-        `Latest vitals summary available`,
-      ],
-      suggestedTopics: [
-        'Review medication adherence',
-        'Discuss any new symptoms',
-        'Update preventive care schedule',
-      ],
-      generatedAt: new Date().toISOString(),
-      disclaimer: 'AI-generated pre-consultation brief. Verify all data with patient.',
-    };
+ACTIVE MEDICATIONS:
+${context.activeMedications.length > 0 
+  ? context.activeMedications.map(m => 
+    `- ${m.name} ${m.dosage || ''} ${m.frequency || ''}`).join('\n')
+  : '- None recorded'}
 
-    await this.redis.setex(cacheKey, 1800, JSON.stringify(brief)); // 30min cache
+ALLERGIES:
+${context.allergies.length > 0
+  ? context.allergies.map(a => 
+    `- ${a.allergen} (${a.severity})${a.reaction ? ': ' + a.reaction : ''}`).join('\n')
+  : '- None recorded'}
 
-    // Audit
-    await this.auditRepo.save(
-      this.auditRepo.create({
-        event_type: 'ai_preconsult',
-        actor_user_id: doctorId,
-        patient_id: patientId,
-        resource_type: 'ai_preconsult',
-      }),
-    );
+ACTIVE CONDITIONS:
+${context.activeConditions.length > 0
+  ? context.activeConditions.map(d => 
+    `- ${d.description} (${d.icd10_code})`).join('\n')
+  : '- None recorded'}
 
-    return brief;
-  }
+RECENT VITALS:
+${Object.entries(context.latestVitals)
+  .filter(([_, v]) => v !== null)
+  .map(([metric, v]) => `- ${metric}: ${v.value} ${v.unit}`)
+  .join('\n') || '- No recent vitals'}
+`;
 
-  // ─── Mock response generator ──────────────────────────────
+      const SYSTEM_PROMPT = `You are MediCore Health Advisor, a health information assistant. You have access to this patient's personal health records shown below.
 
-  private generateMockChatResponse(
-    message: string,
-    meds: string,
-    allergies: string,
-    vitals: any,
-  ) {
-    const lowerMsg = message.toLowerCase();
-    const safetyFlags: string[] = [];
-    let text: string;
+ABSOLUTE RULES — violating any rule is a critical failure:
+1. NEVER diagnose. Say "I notice X in your records" — NEVER say "You have X" or "This means you have X" or "You may have X"
+2. ALWAYS recommend physician consultation for any clinical question
+3. NEVER suggest changing a prescribed dosage under any circumstances
+4. If the patient mentions self-harm, suicide, wanting to die, or giving up on life: respond ONLY with exactly this message: "I'm concerned about what you've shared. Please contact iCall at 9152987821 or a trusted person right now. I cannot help with this — a real person can." — nothing else
+5. Keep responses under 3 paragraphs
+6. End every response that involves a clinical question with: "Please discuss this with your doctor before making any changes."
+7. Express uncertainty explicitly: use "Based on your records, I can see..." not "This means..." or "You should..."
+8. Base every claim on the patient records provided below — never on general assumptions
 
-    if (lowerMsg.includes('interaction') || lowerMsg.includes('combine')) {
-      text = `Based on the patient's current medications (${meds}), I'd recommend checking RxNorm interaction databases. Known allergies include ${allergies}. Always verify contraindications before prescribing.`;
-      safetyFlags.push('VERIFY_INTERACTIONS');
-    } else if (lowerMsg.includes('vital') || lowerMsg.includes('blood pressure')) {
-      const bp = vitals.bp_systolic ? `${vitals.bp_systolic.value}/${vitals.bp_diastolic?.value || '?'}` : 'unavailable';
-      text = `Latest vitals show BP: ${bp}, HR: ${vitals.heart_rate?.value || 'N/A'}, SpO2: ${vitals.spo2?.value || 'N/A'}%. Current medications: ${meds}.`;
-    } else if (lowerMsg.includes('allerg')) {
-      text = `Known allergies for this patient: ${allergies}. Always check for cross-reactivity when prescribing new medications.`;
-      safetyFlags.push('ALLERGY_CHECK_REQUIRED');
-    } else {
-      text = `I can help analyze this patient's data. Current medications: ${meds}. Known allergies: ${allergies}. Please ask a specific question about their treatment plan, vitals, or medication interactions.`;
+PATIENT HEALTH RECORDS:
+${contextString}`;
+
+      const genAI = new GoogleGenerativeAI(
+        this.configService.get<string>('GEMINI_API_KEY') || ''
+      );
+      const model = genAI.getGenerativeModel({ 
+        model: 'gemini-2.5-flash',
+        systemInstruction: SYSTEM_PROMPT,
+        generationConfig: {
+          maxOutputTokens: 500,
+          temperature: 0.3,
+        }
+      });
+
+      const history = conversationHistory.map(msg => ({
+        role: msg.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: msg.content }]
+      }));
+
+      const chat = model.startChat({
+        history: history
+      });
+
+      const result = await chat.sendMessage(message);
+      const reply = result.response.text();
+
+      const safetyKeywords = [
+        'icall', '9152987821', 'concerned about what you shared',
+        'real person can'
+      ];
+      const safetyFlag = safetyKeywords.some(keyword => 
+        reply.toLowerCase().includes(keyword.toLowerCase())
+      );
+
+      return { 
+        reply, 
+        safetyFlag, 
+        sources: ['Patient Health Records'] 
+      };
+    } catch (error: any) {
+      this.logger.error('Gemini API error', error);
+      require('fs').appendFileSync('ai-debug.log', 'CHAT ERROR: ' + (error.stack || error.message || String(error)) + '\n');
+      return { 
+        reply: "I'm temporarily unavailable. Please try again shortly.", 
+        safetyFlag: false, 
+        sources: [] 
+      };
     }
+  }
 
-    return { text, safetyFlags };
+  async getRiskScores(patientId: string) {
+    try {
+      const profile = await this.profileRepo.findOne({ where: { user_id: patientId } });
+      let activeDiagnoses: Diagnosis[] = [];
+      try { activeDiagnoses = await this.diagnosisRepo.find({ where: { patient_id: patientId, status: 'active' as any } }); } catch(e) {}
+      
+      let activeMedications: Medication[] = [];
+      try { activeMedications = await this.medicationRepo.find({ where: { patient_id: patientId, is_active: true } }); } catch(e) {}
+      
+      const bpVitals = await this.vitalRepo.find({
+        where: { patient_id: patientId, metric_type: 'blood_pressure_systolic' },
+        order: { recorded_at: 'DESC' },
+        take: 30,
+      });
+
+      const glucoseVitals = await this.vitalRepo.find({
+        where: { patient_id: patientId, metric_type: 'blood_glucose' },
+        order: { recorded_at: 'DESC' },
+        take: 30,
+      });
+
+      let age = 45;
+      if (profile && profile.date_of_birth) {
+        const dob = new Date(profile.date_of_birth);
+        const diff = Date.now() - dob.getTime();
+        age = Math.floor(diff / (1000 * 60 * 60 * 24 * 365.25));
+      }
+
+      // CARDIOVASCULAR SCORE
+      let cvScore = 0;
+      const cvFactors: any[] = [];
+
+      let avgBP = 120;
+      if (bpVitals.length > 0) {
+        avgBP = bpVitals.reduce((sum, v) => sum + Number(v.value), 0) / bpVitals.length;
+      }
+
+      if (avgBP > 180) {
+        cvScore += 30;
+        cvFactors.push({ factor: "Blood pressure", contribution: 30, direction: "high", explanation: `Average systolic BP ${Math.round(avgBP)} mmHg — severely elevated` });
+      } else if (avgBP > 160) {
+        cvScore += 22;
+        cvFactors.push({ factor: "Blood pressure", contribution: 22, direction: "high", explanation: `Average systolic BP ${Math.round(avgBP)} mmHg — significantly elevated` });
+      } else if (avgBP > 140) {
+        cvScore += 15;
+        cvFactors.push({ factor: "Blood pressure", contribution: 15, direction: "high", explanation: `Average systolic BP ${Math.round(avgBP)} mmHg — elevated` });
+      } else if (avgBP > 130) {
+        cvScore += 8;
+        cvFactors.push({ factor: "Blood pressure", contribution: 8, direction: "high", explanation: `Average systolic BP ${Math.round(avgBP)} mmHg — borderline elevated` });
+      }
+
+      if (age > 65) {
+        cvScore += 20;
+        cvFactors.push({ factor: "Age", contribution: 20, direction: "high", explanation: "Age over 65 increases risk" });
+      } else if (age > 55) {
+        cvScore += 15;
+        cvFactors.push({ factor: "Age", contribution: 15, direction: "high", explanation: "Age over 55 increases risk" });
+      } else if (age > 45) {
+        cvScore += 10;
+        cvFactors.push({ factor: "Age", contribution: 10, direction: "high", explanation: "Age over 45 increases risk" });
+      } else if (age > 35) {
+        cvScore += 5;
+        cvFactors.push({ factor: "Age", contribution: 5, direction: "high", explanation: "Age over 35 slightly increases risk" });
+      }
+
+      const hasDiabetes = activeDiagnoses.some(d => d.icd10_code.startsWith('E11') || d.icd10_code.startsWith('E10'));
+      if (hasDiabetes) {
+        cvScore += 10;
+        cvFactors.push({ factor: "Diabetes diagnosis", contribution: 10, direction: "high", explanation: "Existing diabetes diagnosis increases cardiovascular risk" });
+      }
+
+      const hasHypertension = activeDiagnoses.some(d => d.icd10_code === 'I10');
+      if (hasHypertension) {
+        cvScore += 5;
+        cvFactors.push({ factor: "Hypertension diagnosis", contribution: 5, direction: "high", explanation: "Existing hypertension diagnosis noted" });
+      }
+
+      const hasStatin = activeMedications.some(m => 
+        m.drug_name.toLowerCase().includes('atorvastatin') ||
+        m.drug_name.toLowerCase().includes('rosuvastatin') ||
+        m.drug_name.toLowerCase().includes('simvastatin')
+      );
+      if (hasStatin) {
+        cvScore -= 8;
+        cvFactors.push({ factor: "Statin medication", contribution: -8, direction: "protective", explanation: "Current statin therapy provides cardiovascular protection" });
+      }
+
+      cvScore = Math.max(0, Math.min(100, cvScore));
+
+      let cvLevel = "low";
+      if (cvScore < 30) cvLevel = "low";
+      else if (cvScore < 60) cvLevel = "moderate";
+      else cvLevel = "high";
+
+      cvFactors.sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution));
+      const cvTopFactors = cvFactors.slice(0, 4);
+      const cvExplanation = `Your cardiovascular risk score is ${cvScore}/100 — ${cvLevel} risk. ${cvFactors.filter(f => f.direction === 'high').slice(0,2).map(f => f.explanation).join('. ')}.`;
+
+      // DIABETES SCORE
+      let t2dScore = 0;
+      const t2dFactors: any[] = [];
+
+      if (hasDiabetes) {
+        return {
+          cardiovascular: { score: cvScore, level: cvLevel, topFactors: cvTopFactors, explanation: cvExplanation },
+          diabetes: {
+            score: 100,
+            level: "diagnosed",
+            topFactors: [{ factor: "Active diagnosis", contribution: 100, direction: "high", explanation: "Type 2 Diabetes Mellitus is an active diagnosis on record" }],
+            explanation: "You have an active Type 2 Diabetes diagnosis recorded by your doctor."
+          }
+        };
+      }
+
+      if (glucoseVitals.length >= 10) {
+        const recent10 = glucoseVitals.slice(0, 10);
+        const old10 = glucoseVitals.slice(-10);
+        const recent10avg = recent10.reduce((sum, v) => sum + Number(v.value), 0) / 10;
+        const old10avg = old10.reduce((sum, v) => sum + Number(v.value), 0) / 10;
+        const slope = recent10avg - old10avg;
+        
+        if (slope > 15) {
+          t2dScore += 35;
+          t2dFactors.push({ factor: "Glucose trend", contribution: 35, direction: "high", explanation: `Fasting glucose rising significantly over recent readings (trend: +${Math.round(slope)} mg/dL)` });
+        } else if (slope > 8) {
+          t2dScore += 20;
+          t2dFactors.push({ factor: "Glucose trend", contribution: 20, direction: "high", explanation: `Fasting glucose showing upward trend (+${Math.round(slope)} mg/dL)` });
+        } else if (slope > 3) {
+          t2dScore += 10;
+          t2dFactors.push({ factor: "Glucose trend", contribution: 10, direction: "high", explanation: `Fasting glucose slightly increasing (+${Math.round(slope)} mg/dL)` });
+        }
+      }
+
+      if (glucoseVitals.length > 0) {
+        const latestGlucose = Number(glucoseVitals[0].value);
+        if (latestGlucose > 126) {
+          t2dScore += 25;
+          t2dFactors.push({ factor: "Current glucose", contribution: 25, direction: "high", explanation: `Latest glucose reading ${latestGlucose} mg/dL — above normal threshold` });
+        } else if (latestGlucose > 100) {
+          t2dScore += 15;
+          t2dFactors.push({ factor: "Current glucose", contribution: 15, direction: "high", explanation: `Latest glucose reading ${latestGlucose} mg/dL — borderline elevated` });
+        }
+      }
+
+      if (age > 45) {
+        t2dScore += 10;
+        t2dFactors.push({ factor: "Age", contribution: 10, direction: "high", explanation: "Age over 45 increases risk" });
+      } else if (age > 35) {
+        t2dScore += 5;
+        t2dFactors.push({ factor: "Age", contribution: 5, direction: "high", explanation: "Age over 35 slightly increases risk" });
+      }
+
+      const hasMetformin = activeMedications.some(m => m.drug_name.toLowerCase().includes('metformin'));
+      if (hasMetformin) {
+        t2dFactors.push({ factor: "Metformin", contribution: 0, direction: "protective", explanation: "Metformin prescription suggests active glucose management" });
+      }
+
+      t2dScore = Math.max(0, Math.min(100, t2dScore));
+
+      let t2dLevel = "low";
+      if (t2dScore < 30) t2dLevel = "low";
+      else if (t2dScore < 60) t2dLevel = "moderate";
+      else t2dLevel = "high";
+
+      t2dFactors.sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution));
+      const t2dTopFactors = t2dFactors.slice(0, 4);
+      const t2dExplanation = `Your diabetes risk score is ${t2dScore}/100 — ${t2dLevel} risk. ${t2dFactors.filter(f => f.direction === 'high').slice(0,2).map(f => f.explanation).join('. ')}.`;
+
+      return {
+        cardiovascular: { score: cvScore, level: cvLevel, topFactors: cvTopFactors, explanation: cvExplanation },
+        diabetes: { score: t2dScore, level: t2dLevel, topFactors: t2dTopFactors, explanation: t2dExplanation }
+      };
+
+    } catch (error: any) {
+      this.logger.error('Error calculating risk scores', error);
+      require('fs').appendFileSync('ai-debug.log', 'RISK SCORE ERROR: ' + (error.stack || error.message || String(error)) + '\n');
+      return {
+        cardiovascular: { score: 0, level: "low", topFactors: [], explanation: "Unable to calculate — insufficient data" },
+        diabetes: { score: 0, level: "low", topFactors: [], explanation: "Unable to calculate — insufficient data" }
+      };
+    }
   }
 }

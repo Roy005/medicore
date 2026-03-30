@@ -1,52 +1,72 @@
-import {
-  Controller,
-  Post,
-  Get,
-  Param,
-  Body,
-  UseGuards,
-  Req,
-  Ip,
-} from '@nestjs/common';
+import { Controller, Post, Get, Param, Body, UseGuards, Req, ForbiddenException } from '@nestjs/common';
 import { AiService } from './ai.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { AuditLog } from '../entities';
 
-@Controller()
+@Controller('patients/:id/ai')
 @UseGuards(JwtAuthGuard)
 export class AiController {
-  constructor(private readonly aiService: AiService) {}
+  constructor(
+    private readonly aiService: AiService,
+    @InjectRepository(AuditLog)
+    private readonly auditRepo: Repository<AuditLog>,
+  ) {}
 
-  /** POST /api/v1/ai/advisor/chat — AI chat with patient context */
-  @Post('ai/advisor/chat')
+  @Post('chat')
   async chat(
-    @Body() body: { patientId: string; message: string },
+    @Param('id') patientId: string,
+    @Body() body: { message: string; conversationHistory?: {role: string; content: string}[] },
     @Req() req: any,
-    @Ip() ip: string,
   ) {
-    return this.aiService.chat(body.patientId, body.message, req.user.userId, ip);
+    if (req.user.userId !== patientId && req.user.role !== 'doctor') {
+      if (req.user.userId !== patientId) {
+        throw new ForbiddenException('You can only access your own data');
+      }
+    }
+
+    const { message, conversationHistory = [] } = body;
+    const result = await this.aiService.chat(patientId, message, conversationHistory);
+
+    try {
+      await this.auditRepo.save(this.auditRepo.create({
+        event_type: 'ai_chat',
+        actor_user_id: req.user.userId || req.user.id,
+        patient_id: patientId,
+        resource_type: 'ai',
+      }));
+    } catch (e) {
+      console.error('Failed to save audit log for chat:', e.message);
+    }
+
+    return result;
   }
 
-  /** GET /api/v1/patients/:id/ai/risk-scores — AI risk assessment */
-  @Get('patients/:id/ai/risk-scores')
+  @Get('risk-scores')
   async getRiskScores(
     @Param('id') patientId: string,
     @Req() req: any,
   ) {
-    return this.aiService.getRiskScores(patientId, req.user.userId);
-  }
+    if (req.user.userId !== patientId && req.user.role !== 'doctor') {
+      if (req.user.userId !== patientId) {
+        throw new ForbiddenException('You can only access your own data');
+      }
+    }
 
-  /** GET /api/v1/patients/:id/ai/alerts — combined AI + rule flags */
-  @Get('patients/:id/ai/alerts')
-  async getAiAlerts(@Param('id') patientId: string) {
-    return this.aiService.getAiAlerts(patientId);
-  }
+    const result = await this.aiService.getRiskScores(patientId);
 
-  /** POST /api/v1/patients/:id/ai/preconsult-brief — pre-consultation summary */
-  @Post('patients/:id/ai/preconsult-brief')
-  async getPreconsultBrief(
-    @Param('id') patientId: string,
-    @Req() req: any,
-  ) {
-    return this.aiService.getPreconsultBrief(patientId, req.user.userId);
+    try {
+      await this.auditRepo.save(this.auditRepo.create({
+        event_type: 'ai_risk_scores',
+        actor_user_id: req.user.userId || req.user.id,
+        patient_id: patientId,
+        resource_type: 'ai',
+      }));
+    } catch (e) {
+      console.error('Failed to save audit log for risk scores:', e.message);
+    }
+
+    return result;
   }
 }

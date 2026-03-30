@@ -2,17 +2,23 @@
   "patientName": "Priyanshuroy12122004",
   "bloodGroup": null,
   "allergies": [],
-  "activeMedications": [],
+  "activeMedications": [
+    {
+      "drugName": "paracetamol 500mg",
+      "dosage": "1",
+      "frequency": "twice"
+    }
+  ],
   "chronicConditions": [],
   "emergencyContacts": [],
   "lastVitalsSnapshot": {
-    "bp": null,
+    "bp": "71.00/120.00",
     "hr": "80.00",
-    "spo2": null,
-    "glucose": null,
-    "recordedAt": "2026-03-30T18:17:41.277Z"
+    "spo2": "95.00",
+    "glucose": "71.00",
+    "recordedAt": "2026-03-30T19:42:50.476Z"
   },
   "aiWarningFlags": [],
-  "generatedAt": "2026-03-30T18:22:01.106Z",
-  "warningMessage": "This data was last updated at 3/30/2026, 6:22:01 PM"
+  "generatedAt": "2026-03-30T22:54:03.888Z",
+  "warningMessage": "This data was last updated at 3/30/2026, 10:54:03 PM"
 }

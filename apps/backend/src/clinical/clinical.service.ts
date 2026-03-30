@@ -64,7 +64,9 @@ export class ClinicalService {
       subjective: dto.subjective || null,
       objective: dto.objective || null,
       assessment: dto.assessment || null,
-      plan: dto.plan || null,
+      plan: dto.additionalNotes 
+        ? `${dto.plan || ''}\n\nAdditional Notes: ${dto.additionalNotes}`.trim()
+        : (dto.plan || null),
       visit_date: dto.visitDate,
       amended_note_id: dto.amendedNoteId || null,
     });

@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import api from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { Search, Key, ArrowRight, Users, Shield } from 'lucide-react';
@@ -13,6 +14,25 @@ export default function DoctorPatientsPage() {
   const [clinicalToken, setClinicalToken] = useState<string | null>(null);
   const [patientId, setPatientId] = useState<string | null>(null);
   const [redeemResult, setRedeemResult] = useState<any>(null);
+  const [myPatients, setMyPatients] = useState<any[]>([]);
+  const [loadingPatients, setLoadingPatients] = useState(true);
+
+  const fetchMyPatients = async () => {
+    try {
+      const res = await api.get('/doctors/my-patients');
+      setMyPatients(res.data || []);
+    } catch (err) {
+      console.error('Failed to fetch patients', err);
+    } finally {
+      setLoadingPatients(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user?.role === 'doctor') {
+      fetchMyPatients();
+    }
+  }, [user]);
 
   const handleRedeemOtp = async () => {
     if (!otp || otp.length !== 6) {
@@ -148,6 +168,65 @@ export default function DoctorPatientsPage() {
             Patient can revoke access at any time. All actions are audited.
           </li>
         </ol>
+      </div>
+
+      {/* Internal "Patients Under Treatment" section */}
+      <div className="bg-white rounded-lg shadow-[0px_12px_32px_rgba(25,28,29,0.04)] p-8">
+        <div className="mb-6 flex items-center justify-between">
+          <h2 className="text-xl font-bold text-[#191c1d] flex items-center gap-2">
+            <Users className="w-5 h-5 text-[#005454]" /> Patients Under Treatment
+          </h2>
+          <button onClick={fetchMyPatients} className="text-sm font-semibold text-[#005454] hover:underline">
+            Refresh List
+          </button>
+        </div>
+
+        {loadingPatients ? (
+          <div className="animate-pulse space-y-4">
+            <div className="h-12 bg-[#f2f4f5] rounded" />
+            <div className="h-12 bg-[#f2f4f5] rounded" />
+          </div>
+        ) : myPatients.length === 0 ? (
+          <div className="text-center py-8 text-[#6e7979]">
+            No active patients found. Redeem a consent code to get started.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead className="text-xs text-[#6e7979] uppercase bg-[#f2f4f5]">
+                <tr>
+                  <th className="px-4 py-3 rounded-tl-lg">Patient Name</th>
+                  <th className="px-4 py-3">Access Level</th>
+                  <th className="px-4 py-3">Access Granted</th>
+                  <th className="px-4 py-3 rounded-tr-lg text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {myPatients.map((p, i) => (
+                  <tr key={p.id} className={i !== myPatients.length - 1 ? 'border-b border-[#f2f4f5]' : ''}>
+                    <td className="px-4 py-4 font-semibold text-[#191c1d]">
+                      {p.firstName} {p.lastName}
+                    </td>
+                    <td className="px-4 py-4 capitalize text-[#3e4948]">
+                      {p.accessType?.replace('_', ' ')}
+                    </td>
+                    <td className="px-4 py-4 font-mono text-xs text-[#6e7979]">
+                      {new Date(p.lastAccessGrantedAt).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-4 text-right">
+                      <Link 
+                        href={`/dashboard/doctor/patients/${p.id}`}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-[#005454]/10 text-[#005454] font-semibold rounded-md hover:bg-[#005454]/20 transition-colors"
+                      >
+                        Open EHR <ArrowRight className="w-3 h-3" />
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -143,11 +143,15 @@ export default function ProfilePage() {
           </div>
           <div className="flex-1">
             <h2 className="text-xl font-bold text-[#191c1d]">{fullName}</h2>
-            <p className="text-sm text-[#3e4948]">{user?.email}</p>
+            <p className="text-sm text-[#3e4948] mb-2">{user?.email}</p>
+            <div className="inline-flex items-center gap-2 bg-[#f8fafb] border border-[#e6e8e9] rounded px-2 py-1">
+              <span className="text-[10px] font-semibold text-[#6e7979] uppercase">System UUID:</span>
+              <span className="text-[11px] font-mono font-semibold text-[#005454]" style={{ userSelect: 'all' }}>{user?.id || patientId || 'Loading...'}</span>
+            </div>
           </div>
           <div className="hidden md:flex items-center gap-8">
             <div className="text-right">
-              <p className="text-[10px] font-semibold text-[#6e7979] uppercase tracking-wider">Patient ID</p>
+              <p className="text-[10px] font-semibold text-[#6e7979] uppercase tracking-wider">Short ID</p>
               <p className="text-sm font-bold text-[#005454] font-mono">{user?.email?.slice(0, 8).toUpperCase() || 'MC-0001'}</p>
             </div>
             <div className="text-right">

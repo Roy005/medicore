@@ -8,6 +8,7 @@ import {
   UseGuards,
   Req,
   Ip,
+  BadRequestException,
 } from '@nestjs/common';
 import { ClinicalService } from './clinical.service';
 import { CreateNoteDto, CreateDiagnosisDto } from './clinical.dto';
@@ -29,6 +30,9 @@ export class ClinicalController {
     @Ip() ip: string,
   ) {
     const doctorId = req.clinicalAccess?.doctorId || req.user?.userId;
+    if (!doctorId) {
+      throw new BadRequestException('Doctor identification missing from request');
+    }
     return this.clinicalService.createNote(patientId, dto, doctorId, ip);
   }
 

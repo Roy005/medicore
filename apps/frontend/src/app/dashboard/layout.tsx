@@ -76,39 +76,43 @@ export default function DashboardLayout({
         
         {/* Patient Navigation */}
         <nav className="flex-1 px-3 space-y-0.5 overflow-y-auto no-scrollbar">
-          <p className="px-3 pt-2 pb-2 text-[10px] font-semibold text-[#6e7979] uppercase tracking-widest">
-            Patient
-          </p>
-          {patientNavItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = item.href === '/dashboard' 
-              ? pathname === '/dashboard' 
-              : pathname.startsWith(item.href) && item.href !== '/dashboard';
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-150 relative",
-                  isActive 
-                    ? "bg-[#005454]/10 text-[#005454] font-semibold" 
-                    : "text-[#3e4948] hover:bg-[#e6e8e9] hover:text-[#191c1d]"
-                )}
-              >
-                {/* Active pill indicator */}
-                {isActive && (
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-[#005454] rounded-r-full" />
-                )}
-                <Icon className="w-[18px] h-[18px] flex-shrink-0" />
-                {item.name}
-              </Link>
-            );
-          })}
+          {!isDoctorOrAdmin && (
+            <>
+              <p className="px-3 pt-2 pb-2 text-[10px] font-semibold text-[#6e7979] uppercase tracking-widest">
+                Patient
+              </p>
+              {patientNavItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = item.href === '/dashboard' 
+                  ? pathname === '/dashboard' 
+                  : pathname.startsWith(item.href) && item.href !== '/dashboard';
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-150 relative",
+                      isActive 
+                        ? "bg-[#005454]/10 text-[#005454] font-semibold" 
+                        : "text-[#3e4948] hover:bg-[#e6e8e9] hover:text-[#191c1d]"
+                    )}
+                  >
+                    {/* Active pill indicator */}
+                    {isActive && (
+                      <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-[#005454] rounded-r-full" />
+                    )}
+                    <Icon className="w-[18px] h-[18px] flex-shrink-0" />
+                    {item.name}
+                  </Link>
+                );
+              })}
+            </>
+          )}
 
           {isDoctorOrAdmin && (
             <>
-              <p className="px-3 pt-5 pb-2 text-[10px] font-semibold text-[#6e7979] uppercase tracking-widest">
-                Clinical
+              <p className="px-3 pt-2 pb-2 text-[10px] font-semibold text-[#6e7979] uppercase tracking-widest">
+                Clinical Portal
               </p>
               {doctorNavItems.map((item) => {
                 const Icon = item.icon;
