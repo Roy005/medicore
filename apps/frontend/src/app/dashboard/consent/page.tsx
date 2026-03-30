@@ -2,27 +2,28 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import api from '@/lib/api';
-import { useAuth } from '@/contexts/AuthContext';
+import { getMyPatientId } from '@/lib/patient';
 import { Key, Copy, Check, X, Clock, Shield, RefreshCw } from 'lucide-react';
 
 export default function ConsentPage() {
-  const { user } = useAuth();
   const [patientId, setPatientId] = useState<string | null>(null);
   const [consents, setConsents] = useState<any[]>([]);
   const [generatedOtp, setGeneratedOtp] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [pageError, setPageError] = useState<string | null>(null);
 
   const fetchProfile = useCallback(async () => {
     try {
-      const res = await api.get('/auth/me');
-      const profileRes = await api.get(`/patients/${res.data.id}/profile`).catch(() => null);
-      if (profileRes?.data?.id) {
-        setPatientId(profileRes.data.id);
-        return profileRes.data.id;
-      }
-    } catch { }
+      const id = await getMyPatientId();
+      setPatientId(id);
+      setPageError(null);
+      return id;
+    } catch {
+      setPatientId(null);
+      setPageError('Could not load your patient profile. Please refresh and try again.');
+    }
     return null;
   }, []);
 
@@ -30,7 +31,10 @@ export default function ConsentPage() {
     try {
       const res = await api.get(`/patients/${pid}/consent/list`);
       setConsents(Array.isArray(res.data) ? res.data : []);
-    } catch { setConsents([]); }
+    } catch {
+      setConsents([]);
+      setPageError('Unable to load active consent tokens right now.');
+    }
     setLoading(false);
   }, []);
 
@@ -42,13 +46,17 @@ export default function ConsentPage() {
   }, [fetchProfile, fetchConsents]);
 
   const handleGenerate = async () => {
-    if (!patientId) return;
+    if (!patientId) {
+      setPageError('Patient profile is not available. Please refresh before generating a consent code.');
+      return;
+    }
     setGenerating(true);
     try {
       const res = await api.post(`/patients/${patientId}/consent/generate`, {
         accessType: 'clinical_read',
       });
       setGeneratedOtp(res.data.otp);
+      setPageError(null);
       if (patientId) fetchConsents(patientId);
     } catch (err: any) {
       alert(err.response?.data?.message || 'Failed to generate consent code');
@@ -80,6 +88,12 @@ export default function ConsentPage() {
         <h1 className="text-3xl font-bold text-[#191c1d] tracking-tight">Access Consent</h1>
         <p className="text-[#3e4948] mt-1">Generate one-time codes for doctors to access your records.</p>
       </div>
+
+      {pageError && (
+        <div className="rounded-lg bg-[#ffdad6] px-4 py-3 text-sm text-[#ba1a1a]">
+          {pageError}
+        </div>
+      )}
 
       {/* Generate Card */}
       <div className="bg-white rounded-lg shadow-[0px_12px_32px_rgba(25,28,29,0.04)] p-8">

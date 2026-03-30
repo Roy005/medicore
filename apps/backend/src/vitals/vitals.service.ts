@@ -50,15 +50,21 @@ export class VitalsService {
       saved.push(result as Vital);
     }
 
-    // Run alert engine on the new readings
-    const alerts = await this.alertEngine.evaluate(
-      patientId,
-      readings.map((r) => ({
-        metricType: r.metricType,
-        value: r.value,
-        unit: r.unit,
-      })),
-    );
+    // Run alert engine on the new readings.
+    // Alerts are best-effort: vitals recording must not fail if alerts storage is unavailable.
+    let alerts: any[] = [];
+    try {
+      alerts = await this.alertEngine.evaluate(
+        patientId,
+        readings.map((r) => ({
+          metricType: r.metricType,
+          value: r.value,
+          unit: r.unit,
+        })),
+      );
+    } catch (error) {
+      this.logger.warn(`Alert evaluation skipped: ${(error as Error).message}`);
+    }
 
     // Audit log
     await this.auditRepo.save(
@@ -110,7 +116,15 @@ export class VitalsService {
 
   /** Get latest reading for each metric type */
   async getLatestVitals(patientId: string) {
-    const metrics = ['heart_rate', 'bp_systolic', 'bp_diastolic', 'spo2', 'glucose', 'temperature', 'weight'];
+    const metrics = [
+      'heart_rate',
+      'blood_pressure_systolic',
+      'blood_pressure_diastolic',
+      'spo2',
+      'blood_glucose',
+      'temperature',
+      'weight',
+    ];
     const latest: Record<string, any> = {};
 
     for (const metric of metrics) {

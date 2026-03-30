@@ -46,14 +46,14 @@ export class AlertEngineService {
     },
     {
       id: 'bp_systolic_crisis',
-      metricType: 'bp_systolic',
+      metricType: 'blood_pressure_systolic',
       condition: (v) => v > 180,
       tier: AlertTier.EMERGENCY,
       getMessage: (v, u) => `Hypertensive crisis: systolic ${v} ${u}. Urgent treatment needed.`,
     },
     {
       id: 'glucose_critical_low',
-      metricType: 'glucose',
+      metricType: 'blood_glucose',
       condition: (v) => v < 54,
       tier: AlertTier.EMERGENCY,
       getMessage: (v, u) => `Severe hypoglycemia: ${v} ${u}. Immediate glucose needed.`,
@@ -76,21 +76,21 @@ export class AlertEngineService {
     },
     {
       id: 'bp_systolic_high',
-      metricType: 'bp_systolic',
+      metricType: 'blood_pressure_systolic',
       condition: (v) => v > 140 && v <= 180,
       tier: AlertTier.URGENT,
       getMessage: (v, u) => `Hypertension detected: systolic ${v} ${u}. Review medication.`,
     },
     {
       id: 'glucose_low',
-      metricType: 'glucose',
+      metricType: 'blood_glucose',
       condition: (v) => v >= 54 && v < 70,
       tier: AlertTier.URGENT,
       getMessage: (v, u) => `Hypoglycemia: ${v} ${u}. Treat accordingly.`,
     },
     {
       id: 'glucose_high',
-      metricType: 'glucose',
+      metricType: 'blood_glucose',
       condition: (v) => v > 300,
       tier: AlertTier.URGENT,
       getMessage: (v, u) => `Severe hyperglycemia: ${v} ${u}. Review insulin.`,
@@ -106,14 +106,14 @@ export class AlertEngineService {
     // ─── SOFT TIER ───────────────────────────────────────
     {
       id: 'bp_systolic_elevated',
-      metricType: 'bp_systolic',
+      metricType: 'blood_pressure_systolic',
       condition: (v) => v > 130 && v <= 140,
       tier: AlertTier.SOFT,
       getMessage: (v, u) => `Elevated blood pressure: systolic ${v} ${u}. Monitor trend.`,
     },
     {
       id: 'glucose_elevated',
-      metricType: 'glucose',
+      metricType: 'blood_glucose',
       condition: (v) => v > 180 && v <= 300,
       tier: AlertTier.SOFT,
       getMessage: (v, u) => `Elevated glucose: ${v} ${u}. Consider medication adjustment.`,
@@ -145,45 +145,50 @@ export class AlertEngineService {
   async evaluate(patientId: string, readings: VitalReading[]): Promise<Alert[]> {
     const newAlerts: Alert[] = [];
 
-    for (const reading of readings) {
-      for (const rule of this.rules) {
-        if (rule.metricType !== reading.metricType) continue;
-        if (!rule.condition(reading.value)) continue;
+    try {
+      for (const reading of readings) {
+        for (const rule of this.rules) {
+          if (rule.metricType !== reading.metricType) continue;
+          if (!rule.condition(reading.value)) continue;
 
-        // De-duplication: check if same alert exists within last 1 hour
-        const dedupKey = `${patientId}:${rule.id}`;
-        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+          // De-duplication: check if same alert exists within last 1 hour
+          const dedupKey = `${patientId}:${rule.id}`;
+          const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
 
-        const existing = await this.alertRepo
-          .createQueryBuilder('alert')
-          .where('alert.dedup_key = :dedupKey', { dedupKey })
-          .andWhere('alert.created_at > :oneHourAgo', { oneHourAgo })
-          .andWhere('alert.status != :resolved', { resolved: AlertStatus.RESOLVED })
-          .getOne();
+          const existing = await this.alertRepo
+            .createQueryBuilder('alert')
+            .where('alert.dedup_key = :dedupKey', { dedupKey })
+            .andWhere('alert.created_at > :oneHourAgo', { oneHourAgo })
+            .andWhere('alert.status != :resolved', { resolved: AlertStatus.RESOLVED })
+            .getOne();
 
-        if (existing) {
-          this.logger.debug(`Dedup: skipping alert ${rule.id} for patient ${patientId}`);
-          continue;
+          if (existing) {
+            this.logger.debug(`Dedup: skipping alert ${rule.id} for patient ${patientId}`);
+            continue;
+          }
+
+          const alert = this.alertRepo.create({
+            patient_id: patientId,
+            metric_type: reading.metricType,
+            value: reading.value,
+            unit: reading.unit,
+            tier: rule.tier,
+            message: rule.getMessage(reading.value, reading.unit),
+            rule_id: rule.id,
+            dedup_key: dedupKey,
+          });
+
+          const saved = await this.alertRepo.save(alert);
+          newAlerts.push(saved);
+
+          this.logger.warn(
+            `[ALERT:${rule.tier.toUpperCase()}] Patient ${patientId}: ${rule.getMessage(reading.value, reading.unit)}`,
+          );
         }
-
-        const alert = this.alertRepo.create({
-          patient_id: patientId,
-          metric_type: reading.metricType,
-          value: reading.value,
-          unit: reading.unit,
-          tier: rule.tier,
-          message: rule.getMessage(reading.value, reading.unit),
-          rule_id: rule.id,
-          dedup_key: dedupKey,
-        });
-
-        const saved = await this.alertRepo.save(alert);
-        newAlerts.push(saved);
-
-        this.logger.warn(
-          `[ALERT:${rule.tier.toUpperCase()}] Patient ${patientId}: ${rule.getMessage(reading.value, reading.unit)}`,
-        );
       }
+    } catch (error) {
+      this.logger.warn(`Alert engine storage unavailable: ${(error as Error).message}`);
+      return [];
     }
 
     return newAlerts;
@@ -193,23 +198,32 @@ export class AlertEngineService {
   async getAlerts(patientId: string, status?: string) {
     const where: any = { patient_id: patientId };
     if (status) where.status = status;
-
-    return this.alertRepo.find({
-      where,
-      order: { created_at: 'DESC' },
-    });
+    try {
+      return this.alertRepo.find({
+        where,
+        order: { created_at: 'DESC' },
+      });
+    } catch (error) {
+      this.logger.warn(`Alerts unavailable: ${(error as Error).message}`);
+      return [];
+    }
   }
 
   /** Resolve an alert */
   async resolveAlert(alertId: string, resolvedBy: string) {
-    await this.alertRepo.update(
-      { id: alertId },
-      {
-        status: AlertStatus.RESOLVED,
-        resolved_by: resolvedBy,
-        resolved_at: new Date(),
-      },
-    );
-    return this.alertRepo.findOne({ where: { id: alertId } });
+    try {
+      await this.alertRepo.update(
+        { id: alertId },
+        {
+          status: AlertStatus.RESOLVED,
+          resolved_by: resolvedBy,
+          resolved_at: new Date(),
+        },
+      );
+      return this.alertRepo.findOne({ where: { id: alertId } });
+    } catch (error) {
+      this.logger.warn(`Resolve alert skipped: ${(error as Error).message}`);
+      return null;
+    }
   }
 }

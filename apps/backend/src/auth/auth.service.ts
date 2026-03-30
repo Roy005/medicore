@@ -40,10 +40,19 @@ export class AuthService {
     this.jwtRefreshSecret = this.configService.getOrThrow<string>('JWT_REFRESH_SECRET');
   }
 
+  private normalizeEmail(email: string): string {
+    return email.trim().toLowerCase();
+  }
+
   // ─── REGISTER ──────────────────────────────────────────────
   async register(dto: RegisterDto, ip?: string) {
+    const normalizedEmail = this.normalizeEmail(dto.email);
+
     // Check for existing user
-    const exists = await this.userRepo.findOne({ where: { email: dto.email } });
+    const exists = await this.userRepo
+      .createQueryBuilder('user')
+      .where('LOWER(user.email) = LOWER(:email)', { email: normalizedEmail })
+      .getOne();
     if (exists) {
       throw new ConflictException('Email already registered');
     }
@@ -68,7 +77,7 @@ export class AuthService {
     // Use a transaction: create user + patient_profile atomically
     const result = await this.dataSource.transaction(async (manager) => {
       const user = manager.create(User, {
-        email: dto.email,
+        email: normalizedEmail,
         password_hash: passwordHash,
         tenant_id: resolvedTenantId,
         role: dto.role || UserRole.PATIENT,
@@ -109,8 +118,13 @@ export class AuthService {
 
   // ─── REGISTER DOCTOR ───────────────────────────────────────
   async registerDoctor(dto: RegisterDoctorDto, ip?: string) {
+    const normalizedEmail = this.normalizeEmail(dto.email);
+
     // Check for existing user
-    const exists = await this.userRepo.findOne({ where: { email: dto.email } });
+    const exists = await this.userRepo
+      .createQueryBuilder('user')
+      .where('LOWER(user.email) = LOWER(:email)', { email: normalizedEmail })
+      .getOne();
     if (exists) {
       throw new ConflictException('Email already registered');
     }
@@ -135,7 +149,7 @@ export class AuthService {
     // Transaction: create user + doctor_profile atomically
     const result = await this.dataSource.transaction(async (manager) => {
       const user = manager.create(User, {
-        email: dto.email,
+        email: normalizedEmail,
         password_hash: passwordHash,
         tenant_id: resolvedTenantId,
         role: UserRole.DOCTOR,
@@ -182,7 +196,11 @@ export class AuthService {
 
   // ─── LOGIN ─────────────────────────────────────────────────
   async login(dto: LoginDto, ip?: string) {
-    const user = await this.userRepo.findOne({ where: { email: dto.email } });
+    const normalizedEmail = this.normalizeEmail(dto.email);
+    const user = await this.userRepo
+      .createQueryBuilder('user')
+      .where('LOWER(user.email) = LOWER(:email)', { email: normalizedEmail })
+      .getOne();
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
     }

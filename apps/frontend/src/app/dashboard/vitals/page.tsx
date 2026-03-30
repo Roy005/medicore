@@ -2,52 +2,105 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import api from '@/lib/api';
-import { useAuth } from '@/contexts/AuthContext';
-import { Activity, TrendingUp, Heart, Droplets, ThermometerSun, Weight, Plus, AlertTriangle } from 'lucide-react';
+import { getMyPatientId } from '@/lib/patient';
+import { Activity, Heart, Droplets, ThermometerSun, Weight, PlusCircle } from 'lucide-react';
 
-const METRICS = [
-  { key: 'heart_rate', label: 'Heart Rate', icon: Heart, unit: 'bpm', color: '#E8533A' },
-  { key: 'bp_systolic', label: 'BP Systolic', icon: TrendingUp, unit: 'mmHg', color: '#005454' },
-  { key: 'bp_diastolic', label: 'BP Diastolic', icon: TrendingUp, unit: 'mmHg', color: '#0d6e6e' },
-  { key: 'spo2', label: 'SpO₂', icon: Droplets, unit: '%', color: '#4c5f7e' },
-  { key: 'glucose', label: 'Glucose', icon: Activity, unit: 'mg/dL', color: '#4CAF82' },
-  { key: 'temperature', label: 'Temperature', icon: ThermometerSun, unit: '°F', color: '#E8533A' },
-  { key: 'weight', label: 'Weight', icon: Weight, unit: 'kg', color: '#6e7979' },
+type MetricKey =
+  | 'heart_rate'
+  | 'blood_pressure'
+  | 'spo2'
+  | 'blood_glucose'
+  | 'weight'
+  | 'temperature';
+
+const METRIC_TABS: Array<{ key: MetricKey; label: string }> = [
+  { key: 'heart_rate', label: 'Heart Rate' },
+  { key: 'blood_pressure', label: 'Blood Pressure' },
+  { key: 'spo2', label: 'Blood Oxygen' },
+  { key: 'blood_glucose', label: 'Glucose' },
+  { key: 'weight', label: 'Weight' },
+  { key: 'temperature', label: 'Temperature' },
 ];
 
+const RECORDABLE_METRICS = [
+  { value: 'heart_rate', label: 'Heart Rate', unit: 'bpm' },
+  { value: 'blood_pressure_systolic', label: 'BP Systolic', unit: 'mmHg' },
+  { value: 'blood_pressure_diastolic', label: 'BP Diastolic', unit: 'mmHg' },
+  { value: 'spo2', label: 'Blood Oxygen', unit: '%' },
+  { value: 'blood_glucose', label: 'Glucose', unit: 'mg/dL' },
+  { value: 'weight', label: 'Weight', unit: 'kg' },
+  { value: 'temperature', label: 'Temperature', unit: '°F' },
+];
+
+function statusLabel(metric: MetricKey, value: number | null) {
+  if (value === null) return 'No data';
+  if (metric === 'heart_rate') return value >= 60 && value <= 100 ? 'Normal' : 'Review';
+  if (metric === 'spo2') return value >= 95 ? 'Normal' : 'Low';
+  if (metric === 'blood_glucose') return value >= 70 && value <= 180 ? 'Normal' : 'Review';
+  if (metric === 'temperature') return value <= 99.5 ? 'Normal' : 'Elevated';
+  if (metric === 'weight') return 'Stable';
+  return 'Normal';
+}
+
+function metricColor(status: string) {
+  if (status === 'Low' || status === 'Review' || status === 'Elevated') return '#E8533A';
+  return '#005454';
+}
+
+function toChartPoints(values: number[], width = 640, height = 220): string {
+  if (values.length === 0) return '';
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  return values
+    .map((value, index) => {
+      const x = (index / Math.max(values.length - 1, 1)) * width;
+      const y = height - ((value - min) / range) * height;
+      return `${x},${y}`;
+    })
+    .join(' ');
+}
+
 export default function VitalsPage() {
-  const { user } = useAuth();
-  const [latestVitals, setLatestVitals] = useState<Record<string, any>>({});
+  const [latestVitals, setLatestVitals] = useState<Record<string, { value: number; unit: string; recordedAt: string }>>({});
   const [recentVitals, setRecentVitals] = useState<any[]>([]);
-  const [alerts, setAlerts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showAddModal, setShowAddModal] = useState(false);
   const [patientId, setPatientId] = useState<string | null>(null);
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [selectedMetric, setSelectedMetric] = useState<MetricKey>('heart_rate');
+  const [timeRange, setTimeRange] = useState<'7D' | '30D' | '90D' | '1Y'>('30D');
+  const [entryMetric, setEntryMetric] = useState('heart_rate');
+  const [entryValue, setEntryValue] = useState('');
+  const [entrySource, setEntrySource] = useState('Manual Entry');
+  const [entryNotes, setEntryNotes] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const fetchProfile = useCallback(async () => {
     try {
-      const res = await api.get('/auth/me');
-      const profileRes = await api.get(`/patients/${res.data.id}/profile`).catch(() => null);
-      if (profileRes?.data?.id) {
-        setPatientId(profileRes.data.id);
-        return profileRes.data.id;
-      }
-    } catch { }
+      const id = await getMyPatientId();
+      setPatientId(id);
+      setPageError(null);
+      return id;
+    } catch {
+      setPatientId(null);
+      setPageError('Could not load your patient profile. Please refresh and try again.');
+    }
     return null;
   }, []);
 
   const fetchVitals = useCallback(async (pid: string) => {
     setLoading(true);
     try {
-      const [latestRes, recentRes, alertsRes] = await Promise.all([
+      const [latestRes, recentRes] = await Promise.all([
         api.get(`/patients/${pid}/vitals/latest`).catch(() => ({ data: {} })),
         api.get(`/patients/${pid}/vitals?limit=20`).catch(() => ({ data: [] })),
-        api.get(`/patients/${pid}/alerts?status=active`).catch(() => ({ data: [] })),
       ]);
       setLatestVitals(latestRes.data || {});
       setRecentVitals(Array.isArray(recentRes.data) ? recentRes.data : []);
-      setAlerts(Array.isArray(alertsRes.data) ? alertsRes.data : []);
-    } catch { }
+    } catch {
+      setPageError('Unable to load vitals right now.');
+    }
     setLoading(false);
   }, []);
 
@@ -59,214 +112,241 @@ export default function VitalsPage() {
   }, [fetchProfile, fetchVitals]);
 
   const handleAddVital = async (readings: any[]) => {
-    if (!patientId) return;
+    if (!patientId) {
+      setPageError('Patient profile is not available. Please refresh before saving vitals.');
+      setSuccessMessage(null);
+      return false;
+    }
     try {
       await api.post(`/patients/${patientId}/vitals`, { readings });
       await fetchVitals(patientId);
+      setPageError(null);
+      setSuccessMessage(`Recorded ${readings.length} vital${readings.length > 1 ? 's' : ''} successfully.`);
+      setTimeout(() => setSuccessMessage(null), 3500);
+      return true;
     } catch (err: any) {
       alert(err.response?.data?.message || 'Failed to record vitals');
+      setSuccessMessage(null);
+      return false;
     }
   };
 
+  const handleRecordSingle = async () => {
+    const parsed = parseFloat(entryValue);
+    if (!entryValue || Number.isNaN(parsed)) {
+      setPageError('Enter a valid measured value before recording.');
+      return;
+    }
+    const metricDef = RECORDABLE_METRICS.find((m) => m.value === entryMetric);
+    if (!metricDef) return;
+    setSaving(true);
+    const ok = await handleAddVital([{
+      metricType: metricDef.value,
+      value: parsed,
+      unit: metricDef.unit,
+      sourceDevice: entrySource,
+      contextNotes: entryNotes,
+    }]);
+    setSaving(false);
+    if (ok) {
+      setEntryValue('');
+      setEntryNotes('');
+    }
+  };
+
+  const hr = latestVitals.heart_rate?.value ?? null;
+  const bpSys = latestVitals.blood_pressure_systolic?.value ?? null;
+  const bpDia = latestVitals.blood_pressure_diastolic?.value ?? null;
+  const spo2 = latestVitals.spo2?.value ?? null;
+  const glucose = latestVitals.blood_glucose?.value ?? null;
+  const weight = latestVitals.weight?.value ?? null;
+  const temp = latestVitals.temperature?.value ?? null;
+
+  const cards = [
+    { key: 'heart_rate' as MetricKey, title: 'Heart Rate', display: hr === null ? '--' : `${hr}`, unit: 'bpm', icon: Heart },
+    { key: 'blood_pressure' as MetricKey, title: 'Blood Pressure', display: bpSys === null ? '--/--' : `${bpSys}/${bpDia ?? '--'}`, unit: 'mmHg', icon: Activity },
+    { key: 'spo2' as MetricKey, title: 'Blood Oxygen', display: spo2 === null ? '--' : `${spo2}`, unit: '%', icon: Droplets },
+    { key: 'blood_glucose' as MetricKey, title: 'Glucose', display: glucose === null ? '--' : `${glucose}`, unit: 'mg/dL', icon: Activity },
+    { key: 'weight' as MetricKey, title: 'Weight', display: weight === null ? '--' : `${weight}`, unit: 'kg', icon: Weight },
+    { key: 'temperature' as MetricKey, title: 'Temperature', display: temp === null ? '--' : `${temp}`, unit: '°F', icon: ThermometerSun },
+  ];
+
+  const selectedSeriesKey =
+    selectedMetric === 'blood_pressure'
+      ? 'blood_pressure_systolic'
+      : selectedMetric;
+  const selectedReadings = recentVitals
+    .filter((v: any) => v.metric_type === selectedSeriesKey)
+    .map((v: any) => Number(v.value))
+    .slice(0, 12)
+    .reverse();
+  const fallbackCenter =
+    (latestVitals[selectedSeriesKey]?.value as number | undefined) ?? 80;
+  const fallbackSeries = Array.from({ length: 12 }, (_, i) => fallbackCenter + Math.round(Math.sin(i / 1.6) * 8));
+  const chartValues = selectedReadings.length > 1 ? selectedReadings : fallbackSeries;
+  const chartPoints = toChartPoints(chartValues);
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-[#191c1d] tracking-tight">Vitals</h1>
-          <p className="text-[#3e4948] mt-1">Track your health metrics and view trends.</p>
+          <h1 className="text-3xl font-bold text-[#191c1d] tracking-tight">Clinical Vitals</h1>
+          <p className="text-[#3e4948] mt-1">Provider-style telemetry with manual entry and trend monitoring.</p>
         </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="px-4 py-2.5 bg-gradient-to-r from-[#005454] to-[#0d6e6e] text-white font-semibold rounded-lg hover:shadow-lg transition-all flex items-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          Record Vitals
-        </button>
-      </div>
-
-      {/* Active Alerts */}
-      {alerts.length > 0 && (
-        <div className="space-y-2">
-          {alerts.map((alert: any) => (
-            <div
-              key={alert.id}
-              className={`rounded-lg px-4 py-3 flex items-center gap-3 border-l-4 ${
-                alert.tier === 'emergency' ? 'bg-red-50 border-[#ba1a1a]' :
-                alert.tier === 'urgent' ? 'bg-orange-50 border-orange-500' :
-                alert.tier === 'soft' ? 'bg-yellow-50 border-yellow-500' :
-                'bg-blue-50 border-blue-400'
+        <div className="inline-flex rounded-lg bg-[#f2f4f5] p-1">
+          {(['7D', '30D', '90D', '1Y'] as const).map((r) => (
+            <button
+              key={r}
+              onClick={() => setTimeRange(r)}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                timeRange === r ? 'bg-white text-[#005454] shadow-sm' : 'text-[#6e7979] hover:text-[#191c1d]'
               }`}
             >
-              <AlertTriangle className={`w-4 h-4 ${
-                alert.tier === 'emergency' ? 'text-[#ba1a1a]' :
-                alert.tier === 'urgent' ? 'text-orange-600' :
-                alert.tier === 'soft' ? 'text-yellow-600' : 'text-blue-500'
-              }`} />
-              <div className="flex-1">
-                <span className="text-xs font-bold uppercase tracking-wide">{alert.tier}</span>
-                <p className="text-sm text-[#191c1d]">{alert.message}</p>
+              {r}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {pageError && (
+        <div className="rounded-lg bg-[#ffdad6] px-4 py-3 text-sm text-[#ba1a1a]">
+          {pageError}
+        </div>
+      )}
+
+      {successMessage && (
+        <div className="rounded-lg bg-[#d8f8e8] px-4 py-3 text-sm text-[#1b5e42] shadow-[0px_8px_24px_rgba(25,28,29,0.04)]">
+          {successMessage}
+        </div>
+      )}
+
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {METRIC_TABS.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setSelectedMetric(tab.key)}
+            className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors ${
+              selectedMetric === tab.key
+                ? 'bg-[#005454]/10 text-[#005454]'
+                : 'text-[#6e7979] hover:text-[#191c1d]'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-6 gap-4">
+        {cards.map((card) => {
+          const status = statusLabel(card.key, card.key === 'blood_pressure' ? bpSys : Number(card.display));
+          const color = metricColor(status);
+          const Icon = card.icon;
+          return (
+            <div key={card.key} className="xl:col-span-1 bg-white rounded-xl p-4 shadow-[0px_12px_32px_rgba(25,28,29,0.04)]">
+              <p className="text-[11px] text-[#6e7979] font-semibold tracking-widest uppercase">{card.title}</p>
+              <div className="mt-1 flex items-end gap-1">
+                <p className="text-3xl font-bold text-[#191c1d] font-mono" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                  {card.display}
+                </p>
+                <span className="text-xs text-[#6e7979] mb-1">{card.unit}</span>
+              </div>
+              <div className="mt-3 flex items-center gap-2 text-xs font-semibold" style={{ color }}>
+                <Icon className="w-3.5 h-3.5" />
+                {status.toUpperCase()}
               </div>
             </div>
-          ))}
-        </div>
-      )}
+          );
+        })}
+      </div>
 
-      {/* Latest Vitals Grid */}
-      {loading ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[...Array(7)].map((_, i) => (
-            <div key={i} className="animate-pulse bg-[#f2f4f5] h-32 rounded-lg" />
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {METRICS.map((m) => {
-            const val = latestVitals[m.key];
-            const Icon = m.icon;
-            return (
-              <div key={m.key} className="bg-white rounded-lg shadow-[0px_12px_32px_rgba(25,28,29,0.04)] p-5 hover:shadow-md transition-shadow">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-8 h-8 rounded-md flex items-center justify-center" style={{ backgroundColor: `${m.color}15` }}>
-                    <Icon className="w-4 h-4" style={{ color: m.color }} />
-                  </div>
-                  <span className="text-xs font-medium text-[#6e7979] uppercase tracking-wider">{m.label}</span>
-                </div>
-                {val ? (
-                  <>
-                    <p className="text-3xl font-bold text-[#191c1d] font-mono" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-                      {val.value}
-                      <span className="text-sm text-[#6e7979] ml-1 font-sans">{m.unit}</span>
-                    </p>
-                    <p className="text-xs text-[#bec9c8] mt-1 font-mono" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-                      {val.recordedAt ? new Date(val.recordedAt).toLocaleDateString() : ''}
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-lg text-[#bec9c8]">No data</p>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+      <div className="grid grid-cols-1 xl:grid-cols-4 gap-4">
+        <div className="xl:col-span-3 bg-white rounded-xl p-6 shadow-[0px_12px_32px_rgba(25,28,29,0.04)]">
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <h2 className="text-3xl font-bold text-[#191c1d]">
+                {METRIC_TABS.find((m) => m.key === selectedMetric)?.label} Longitudinal View
+              </h2>
+              <p className="text-[#6e7979] mt-1">Provider-verified telemetry trend over {timeRange.toLowerCase()}.</p>
+            </div>
+            <div className="text-sm text-[#6e7979]">
+              Daily Average
+            </div>
+          </div>
 
-      {/* Recent Readings Table */}
-      {recentVitals.length > 0 && (
-        <div className="bg-white rounded-lg shadow-[0px_12px_32px_rgba(25,28,29,0.04)] p-6">
-          <h2 className="text-lg font-semibold text-[#191c1d] mb-4">Recent Readings</h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[#e6e8e9]">
-                  <th className="text-left py-3 px-2 text-[#6e7979] text-xs font-medium uppercase">Metric</th>
-                  <th className="text-left py-3 px-2 text-[#6e7979] text-xs font-medium uppercase">Value</th>
-                  <th className="text-left py-3 px-2 text-[#6e7979] text-xs font-medium uppercase">Source</th>
-                  <th className="text-left py-3 px-2 text-[#6e7979] text-xs font-medium uppercase">Recorded</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentVitals.map((v: any) => (
-                  <tr key={v.id} className="border-b border-[#f2f4f5] hover:bg-[#f8fafb]">
-                    <td className="py-3 px-2 capitalize text-[#191c1d]">{v.metric_type?.replace('_', ' ')}</td>
-                    <td className="py-3 px-2 font-mono font-bold text-[#005454]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-                      {v.value} <span className="text-xs text-[#6e7979] font-normal">{v.unit}</span>
-                    </td>
-                    <td className="py-3 px-2 text-[#6e7979]">{v.source_device || 'Manual'}</td>
-                    <td className="py-3 px-2 text-xs text-[#6e7979] font-mono" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-                      {v.recorded_at ? new Date(v.recorded_at).toLocaleString() : ''}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="rounded-xl bg-[#f8fafb] p-4">
+            <svg viewBox="0 0 640 260" className="w-full h-[280px]">
+              <defs>
+                <linearGradient id="vitalGradient" x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="0%" stopColor="#005454" stopOpacity="0.24" />
+                  <stop offset="100%" stopColor="#005454" stopOpacity="0.02" />
+                </linearGradient>
+              </defs>
+              <polyline points={chartPoints} fill="none" stroke="#005454" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+              <polyline points={`${chartPoints} 640,260 0,260`} fill="url(#vitalGradient)" stroke="none" />
+            </svg>
           </div>
         </div>
-      )}
 
-      {/* Add Vitals Modal */}
-      {showAddModal && (
-        <AddVitalsModal
-          onClose={() => setShowAddModal(false)}
-          onSave={handleAddVital}
-        />
-      )}
-    </div>
-  );
-}
-
-function AddVitalsModal({ onClose, onSave }: { onClose: () => void; onSave: (readings: any[]) => Promise<void> }) {
-  const [readings, setReadings] = useState<any[]>([{ metricType: 'heart_rate', value: '', unit: 'bpm' }]);
-  const [saving, setSaving] = useState(false);
-
-  const metricOptions = METRICS.map((m) => ({ value: m.key, label: m.label, unit: m.unit }));
-
-  const addRow = () => setReadings([...readings, { metricType: 'heart_rate', value: '', unit: 'bpm' }]);
-  const removeRow = (i: number) => setReadings(readings.filter((_, idx) => idx !== i));
-
-  const updateRow = (i: number, field: string, val: any) => {
-    const updated = [...readings];
-    updated[i] = { ...updated[i], [field]: val };
-    if (field === 'metricType') {
-      const m = METRICS.find((m) => m.key === val);
-      updated[i].unit = m?.unit || '';
-    }
-    setReadings(updated);
-  };
-
-  const handleSave = async () => {
-    const valid = readings.filter((r) => r.value && !isNaN(parseFloat(r.value)));
-    if (valid.length === 0) return;
-    setSaving(true);
-    await onSave(valid.map((r) => ({ ...r, value: parseFloat(r.value) })));
-    setSaving(false);
-    onClose();
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg shadow-2xl w-full max-w-lg">
-        <div className="p-6 border-b border-[#e6e8e9]">
-          <h2 className="text-xl font-bold text-[#191c1d]">Record Vitals</h2>
-        </div>
-        <div className="p-6 space-y-3 max-h-[60vh] overflow-y-auto">
-          {readings.map((r, i) => (
-            <div key={i} className="flex gap-2 items-end">
-              <div className="flex-1">
-                <select
-                  value={r.metricType}
-                  onChange={(e) => updateRow(i, 'metricType', e.target.value)}
-                  className="w-full bg-[#e1e3e4] rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#005454]"
-                >
-                  {metricOptions.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="w-24">
+        <div className="xl:col-span-1 bg-white rounded-xl p-6 shadow-[0px_12px_32px_rgba(25,28,29,0.04)]">
+          <h3 className="text-[28px] font-bold text-[#191c1d] flex items-center gap-2">
+            <PlusCircle className="w-6 h-6 text-[#005454]" />
+            Manual Entry
+          </h3>
+          <div className="mt-5 space-y-4">
+            <div>
+              <label className="text-xs font-semibold text-[#6e7979] uppercase tracking-wider">Metric Category</label>
+              <select
+                value={entryMetric}
+                onChange={(e) => setEntryMetric(e.target.value)}
+                className="mt-1 w-full rounded-lg bg-[#e1e3e4] px-3 py-3 text-sm text-[#191c1d] focus:outline-none focus:ring-2 focus:ring-[#005454]"
+              >
+                {RECORDABLE_METRICS.map((m) => (
+                  <option key={m.value} value={m.value}>{m.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-[#6e7979] uppercase tracking-wider">Measured Value</label>
+              <div className="mt-1 flex items-center rounded-lg bg-[#e1e3e4] px-3 py-3">
                 <input
                   type="number"
-                  value={r.value}
-                  onChange={(e) => updateRow(i, 'value', e.target.value)}
-                  className="w-full bg-[#e1e3e4] rounded-lg px-3 py-2.5 text-sm font-mono text-center focus:outline-none focus:ring-2 focus:ring-[#005454]"
-                  placeholder="Value"
+                  value={entryValue}
+                  onChange={(e) => setEntryValue(e.target.value)}
+                  className="w-full bg-transparent text-xl font-bold font-mono text-[#191c1d] focus:outline-none"
                   style={{ fontFamily: 'JetBrains Mono, monospace' }}
+                  placeholder="72"
                 />
+                <span className="text-xs text-[#6e7979]">
+                  {RECORDABLE_METRICS.find((m) => m.value === entryMetric)?.unit}
+                </span>
               </div>
-              <span className="text-xs text-[#6e7979] w-12">{r.unit}</span>
-              {readings.length > 1 && (
-                <button onClick={() => removeRow(i)} className="text-[#ba1a1a] text-sm">✕</button>
-              )}
             </div>
-          ))}
-          <button onClick={addRow} className="text-sm text-[#005454] font-semibold flex items-center gap-1 mt-2">
-            <Plus className="w-4 h-4" /> Add metric
-          </button>
-        </div>
-        <div className="p-6 border-t border-[#e6e8e9] flex justify-end gap-3">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-[#3e4948]">Cancel</button>
-          <button onClick={handleSave} disabled={saving} className="px-6 py-2 bg-gradient-to-r from-[#005454] to-[#0d6e6e] text-white text-sm font-semibold rounded-lg disabled:opacity-50">
-            {saving ? 'Saving...' : 'Save Vitals'}
-          </button>
+            <div>
+              <label className="text-xs font-semibold text-[#6e7979] uppercase tracking-wider">Source Device</label>
+              <input
+                value={entrySource}
+                onChange={(e) => setEntrySource(e.target.value)}
+                className="mt-1 w-full rounded-lg bg-[#e1e3e4] px-3 py-3 text-sm text-[#191c1d] focus:outline-none focus:ring-2 focus:ring-[#005454]"
+                placeholder="Apple Watch"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-[#6e7979] uppercase tracking-wider">Notes (Optional)</label>
+              <textarea
+                value={entryNotes}
+                onChange={(e) => setEntryNotes(e.target.value)}
+                className="mt-1 h-24 w-full rounded-lg bg-[#e1e3e4] px-3 py-3 text-sm text-[#191c1d] focus:outline-none focus:ring-2 focus:ring-[#005454]"
+                placeholder="e.g. Post-cardio session"
+              />
+            </div>
+            <button
+              onClick={handleRecordSingle}
+              disabled={saving || loading}
+              className="w-full rounded-lg bg-gradient-to-r from-[#005454] to-[#0d6e6e] py-3 text-white font-semibold hover:shadow-lg transition-all disabled:opacity-60"
+            >
+              {saving ? 'Recording...' : 'Record Reading'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

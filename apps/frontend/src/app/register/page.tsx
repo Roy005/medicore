@@ -24,7 +24,7 @@ export default function RegisterPage() {
       await api.post('/auth/register', { 
         email, password, role: 'patient', firstName, lastName 
       });
-      router.push('/login');
+      router.push(`/login?email=${encodeURIComponent(email.trim())}`);
     } catch (err: unknown) {
       const errorObj = err as { response?: { data?: { message?: string | string[] } } };
       let errorMsg = 'Registration failed. Please try again.';
