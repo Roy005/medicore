@@ -5,7 +5,7 @@ Loads environment variables via python-dotenv and exposes them as typed settings
 
 import os
 from functools import lru_cache
-from dotenv import load_dotenv
+from dotenv import load_dotenv # type: ignore
 
 load_dotenv()
 
@@ -13,7 +13,7 @@ load_dotenv()
 class Settings:
     """Application settings loaded from environment variables."""
 
-    ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL",
         "postgresql://medicore:medicore_secret@localhost:5432/medicore",
