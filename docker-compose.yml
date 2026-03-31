@@ -72,47 +72,43 @@ services:
     networks:
       - medicore-network
 
-  # ── Backend (NestJS) — placeholder ─────────────────────────────
-  # Uncomment once the NestJS app is scaffolded (Task 2+)
-  #
-  # backend:
-  #   build:
-  #     context: ./apps/backend
-  #     dockerfile: Dockerfile
-  #   container_name: medicore-backend
-  #   restart: unless-stopped
-  #   ports:
-  #     - "3001:3001"
-  #   environment:
-  #     NODE_ENV: development
-  #     DATABASE_URL: postgresql://${POSTGRES_USER:-medicore}:${POSTGRES_PASSWORD:-medicore_secret}@postgres:5432/${POSTGRES_DB:-medicore}
-  #     REDIS_URL: redis://redis:6379
-  #     JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #     redis:
-  #       condition: service_healthy
-  #   networks:
-  #     - medicore-network
+  # ── Backend (NestJS) ──────────────────────────────────────────
+  backend:
+    build:
+      context: ./apps/backend
+      dockerfile: Dockerfile
+    container_name: medicore-backend
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://${POSTGRES_USER:-medicore}:${POSTGRES_PASSWORD:-medicore_secret}@postgres:5432/${POSTGRES_DB:-medicore}
+      REDIS_URL: redis://medicore-redis:6379
+      JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - medicore-network
 
-  # ── Frontend (Next.js) — placeholder ───────────────────────────
-  # Uncomment once the Next.js app is scaffolded (Task 2+)
-  #
-  # frontend:
-  #   build:
-  #     context: ./apps/frontend
-  #     dockerfile: Dockerfile
-  #   container_name: medicore-frontend
-  #   restart: unless-stopped
-  #   ports:
-  #     - "3000:3000"
-  #   environment:
-  #     NEXT_PUBLIC_API_URL: http://localhost:3001
-  #   depends_on:
-  #     - backend
-  #   networks:
-  #     - medicore-network
+  # ── Frontend (Next.js) ─────────────────────────────────────────
+  frontend:
+    build:
+      context: ./apps/frontend
+      dockerfile: Dockerfile
+    container_name: medicore-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+    depends_on:
+      - backend
+    networks:
+      - medicore-network
 
 # ── Volumes ────────────────────────────────────────────────────
 volumes:
