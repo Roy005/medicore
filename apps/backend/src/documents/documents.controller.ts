@@ -56,7 +56,7 @@ export class DocumentsController {
     
     res.set({
       'Content-Type': document.mimetype,
-      'Content-Disposition': `attachment; filename="${document.original_name}"`,
+      'Content-Disposition': `inline; filename="${document.original_name}"`,
     });
     
     return new StreamableFile(file);

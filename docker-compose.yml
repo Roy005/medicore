@@ -62,7 +62,7 @@ services:
       - "${AI_SERVICE_PORT:-8001}:8001"
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-medicore}:${POSTGRES_PASSWORD:-medicore_secret}@postgres:5432/${POSTGRES_DB:-medicore}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       PORT: 8001
     depends_on:
       postgres:

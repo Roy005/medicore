@@ -59,10 +59,9 @@ class PatientContextService:
         async with db.acquire() as conn:
             # 1. Demographics
             demo_query = """
-                SELECT p.blood_group, p.gender, u.date_of_birth,
-                       EXTRACT(YEAR FROM age(CURRENT_DATE, u.date_of_birth)) AS age
+                SELECT p.blood_group, p.demographics->>'gender' as gender, p.date_of_birth,
+                       EXTRACT(YEAR FROM age(CURRENT_DATE, p.date_of_birth)) AS age
                 FROM patient_profiles p
-                JOIN users u ON p.user_id = u.id
                 WHERE p.id = $1
             """
             demo_record = await conn.fetchrow(demo_query, patient_id)
@@ -76,7 +75,7 @@ class PatientContextService:
 
             # 2. Active Medications
             meds_query = """
-                SELECT name, dose, frequency, rxnorm_code, prescribed_at
+                SELECT drug_name AS name, dosage AS dose, frequency, rxnorm_code, start_date AS prescribed_at
                 FROM medications
                 WHERE patient_id = $1 AND is_active = true
             """
@@ -94,7 +93,7 @@ class PatientContextService:
 
             # 3. Allergies
             allergies_query = """
-                SELECT allergen, severity, reaction_type
+                SELECT allergen, severity, reaction_description AS reaction_type
                 FROM allergies
                 WHERE patient_id = $1
             """
@@ -103,7 +102,7 @@ class PatientContextService:
 
             # 4. Active Conditions (Diagnoses)
             conditions_query = """
-                SELECT name, icd10, created_at AS since
+                SELECT icd10_description AS name, icd10_code AS icd10, diagnosis_date AS since
                 FROM diagnoses
                 WHERE patient_id = $1 AND status = 'active'
             """

@@ -1,0 +1,18 @@
+{
+  "patientName": "Sambtganguly20",
+  "bloodGroup": null,
+  "allergies": [],
+  "activeMedications": [],
+  "chronicConditions": [],
+  "emergencyContacts": [],
+  "lastVitalsSnapshot": {
+    "bp": null,
+    "hr": null,
+    "spo2": null,
+    "glucose": null,
+    "recordedAt": null
+  },
+  "aiWarningFlags": [],
+  "generatedAt": "2026-03-31T07:37:04.413Z",
+  "warningMessage": "This data was last updated at 3/31/2026, 7:37:04 AM"
+}

@@ -12,8 +12,10 @@ import { ClinicalModule } from './clinical/clinical.module';
 import { DrugsModule } from './drugs/drugs.module';
 import { VitalsModule } from './vitals/vitals.module';
 import { AiModule } from './ai/ai.module';
+import { AppController } from './app.controller';
 
 @Module({
+  controllers: [AppController],
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     DatabaseModule,

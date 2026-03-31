@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import google.generativeai as genai  # type: ignore  # pyright: ignore[reportPrivateImportUsage]
 from config import get_settings  # type: ignore
+from fastapi import HTTPException  # type: ignore
 
 logger = logging.getLogger("medicore-ai.llm")
 
@@ -45,8 +46,13 @@ CRISIS_RESPONSE = (
 )
 
 
+import asyncio
+
 class LLMService:
     """Wrapper around the Google Gemini SDK for AI interactions with safety constraints."""
+
+    MAX_RETRIES = 3
+    RETRY_DELAYS = [2, 5, 10]  # seconds
 
     def __init__(self) -> None:
         self.settings = get_settings()
@@ -57,7 +63,7 @@ class LLMService:
 
         # Initialize the model
         self.model = genai.GenerativeModel(  # pyright: ignore[reportPrivateImportUsage]
-            model_name="gemini-2.0-flash",
+            model_name="gemini-2.5-flash",
             generation_config=genai.GenerationConfig(  # pyright: ignore[reportPrivateImportUsage]
                 max_output_tokens=500,
                 temperature=0.3,
@@ -96,7 +102,6 @@ class LLMService:
         system_prompt = self._build_system_prompt(patient_context)
 
         # 3. Build conversation contents for Gemini
-        # Gemini uses a different format: system instruction + chat history
         contents: List[Dict[str, Any]] = []
 
         if conversation_history:
@@ -104,51 +109,60 @@ class LLMService:
                 role = entry.get("role", "user")
                 content = entry.get("content", "")
                 if content:
-                    # Gemini uses "user" and "model" (not "assistant")
                     gemini_role = "model" if role == "assistant" else "user"
                     contents.append({"role": gemini_role, "parts": [content]})
 
         # Add the current user message
         contents.append({"role": "user", "parts": [message]})
 
-        # 4. Call Gemini API
-        try:
-            # Create a model with the system instruction for this request
-            model_with_context = genai.GenerativeModel(  # pyright: ignore[reportPrivateImportUsage]
-                model_name="gemini-2.0-flash",
-                generation_config=genai.GenerationConfig(  # pyright: ignore[reportPrivateImportUsage]
-                    max_output_tokens=500,
-                    temperature=0.3,
-                ),
-                system_instruction=system_prompt,
-            )
-
-            response = await model_with_context.generate_content_async(contents)
-
-            reply = response.text
-            logger.info("Gemini response received (%d chars)", len(reply))
-            return (reply, False)
-
-        except Exception as exc:
-            error_msg = str(exc).lower()
-            if "api_key" in error_msg or "invalid" in error_msg or "authentication" in error_msg:
-                logger.error("Gemini API key is invalid or missing")
-                return (
-                    "I'm sorry, the AI service is not properly configured. "
-                    "Please contact your administrator to set up the API key.",
-                    False,
+        # 4. Call Gemini API with retry logic for rate limits
+        last_error: Optional[Exception] = None
+        for attempt in range(self.MAX_RETRIES):
+            try:
+                model_with_context = genai.GenerativeModel(  # pyright: ignore[reportPrivateImportUsage]
+                    model_name="gemini-2.5-flash",
+                    generation_config=genai.GenerationConfig(  # pyright: ignore[reportPrivateImportUsage]
+                        max_output_tokens=500,
+                        temperature=0.3,
+                    ),
+                    system_instruction=system_prompt,
                 )
-            elif "quota" in error_msg or "rate" in error_msg:
-                logger.warning("Gemini rate limit / quota hit")
-                return (
-                    "I'm currently receiving too many requests. "
-                    "Please try again in a moment.",
-                    False,
-                )
-            else:
-                logger.error("Gemini API error: %s", exc)
-                return (
-                    "I'm sorry, I encountered an error processing your request. "
-                    "Please try again later.",
-                    False,
-                )
+
+                response = await model_with_context.generate_content_async(contents)
+
+                reply = response.text
+                logger.info("Gemini response received (%d chars, attempt %d)", len(reply), attempt + 1)
+                return (reply, False)
+
+            except Exception as exc:
+                last_error = exc
+                error_msg = str(exc).lower()
+
+                if "api_key" in error_msg or "invalid" in error_msg or "authentication" in error_msg:
+                    logger.error("Gemini API key is invalid or missing")
+                    return (
+                        "I'm sorry, the AI service is not properly configured. "
+                        "Please contact your administrator to set up the API key.",
+                        False,
+                    )
+                elif "quota" in error_msg or "rate" in error_msg:
+                    if attempt < self.MAX_RETRIES - 1:
+                        delay = self.RETRY_DELAYS[attempt]
+                        logger.warning("Gemini rate limit hit (attempt %d/%d), retrying in %ds...", attempt + 1, self.MAX_RETRIES, delay)
+                        await asyncio.sleep(delay)
+                        continue
+                    else:
+                        logger.warning("Gemini rate limit hit after %d attempts, giving up", self.MAX_RETRIES)
+                        raise HTTPException(status_code=429, detail="Rate limit exceeded on AI Service.")
+                else:
+                    logger.error("Gemini API error: %s", exc)
+                    return (
+                        "I'm sorry, I encountered an error processing your request. "
+                        "Please try again later.",
+                        False,
+                    )
+
+        # Should not reach here, but just in case
+        logger.error("Unexpected: exhausted retries without returning. Last error: %s", last_error)
+        raise HTTPException(status_code=429, detail="Rate limit exceeded on AI Service.")
+

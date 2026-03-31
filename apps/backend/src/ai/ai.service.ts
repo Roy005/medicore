@@ -3,12 +3,17 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import axios from 'axios';
 
 import { Medication, Allergy, Diagnosis, Vital, PatientProfile, AuditLog } from '../entities';
 
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
+
+  private getAiServiceUrl(): string {
+    return this.configService.get<string>('AI_SERVICE_URL') || 'http://localhost:8001';
+  }
 
   constructor(
     @InjectRepository(Medication)
@@ -100,6 +105,32 @@ export class AiService {
   }
 
   async chat(patientId: string, message: string, conversationHistory: {role: string, content: string}[]) {
+    // 1. Try Python AI Service
+    try {
+      const aiServiceUrl = this.getAiServiceUrl();
+      const response = await axios.post(`${aiServiceUrl}/ai/advisor/chat`, {
+        patientId,
+        message,
+        conversationHistory
+      }, { timeout: 8000 });
+      
+      if (response.data && response.data.reply) {
+        return {
+          reply: response.data.reply,
+          safetyFlag: response.data.safetyFlag || false,
+          sources: response.data.sources ? response.data.sources.map((s: any) => s.title) : [],
+        };
+      }
+    } catch (error: any) {
+      const isRateLimit = error?.response?.status === 429;
+      this.logger.warn(`Python AI service unavailable for chat (${isRateLimit ? 'rate limited' : error.message}), falling back to local Gemini adapter`);
+      // If the AI service hit Gemini rate limits, wait before retrying with the same key
+      if (isRateLimit) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    }
+
+    // 2. Fallback to Local Gemini Adapter
     try {
       const context = await this.getPatientContext(patientId);
 
@@ -196,6 +227,21 @@ ${contextString}`;
   }
 
   async getRiskScores(patientId: string) {
+    // 1. Try Python AI Service
+    try {
+      const aiServiceUrl = this.getAiServiceUrl();
+      const response = await axios.get(`${aiServiceUrl}/ai/patients/${patientId}/risk-scores`, {
+        timeout: 8000
+      });
+      
+      if (response.data && response.data.cardiovascular && response.data.diabetes) {
+        return response.data;
+      }
+    } catch (error: any) {
+      this.logger.warn(`Python AI service unavailable for risk scores, falling back to local logic: ${error.message}`);
+    }
+
+    // 2. Fallback to Local Scoring Algorithm
     try {
       const profile = await this.profileRepo.findOne({ where: { user_id: patientId } });
       let activeDiagnoses: Diagnosis[] = [];

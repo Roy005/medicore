@@ -350,15 +350,12 @@ export default function PatientEHRPage() {
                       headers,
                       responseType: 'blob' 
                     });
-                    const url = window.URL.createObjectURL(new Blob([response.data]));
-                    const link = document.createElement('a');
-                    link.href = url;
-                    link.setAttribute('download', doc.original_name || doc.originalName || 'document');
-                    document.body.appendChild(link);
-                    link.click();
-                    link.parentNode?.removeChild(link);
+                    const mimeType = response.headers['content-type'] || doc.mimetype || 'application/octet-stream';
+                    const blob = new Blob([response.data], { type: mimeType });
+                    const url = window.URL.createObjectURL(blob);
+                    window.open(url, '_blank');
                   } catch (err) {
-                    console.error('Download failed', err);
+                    console.error('Preview failed', err);
                   } finally {
                     setViewingDoc(null);
                   }
