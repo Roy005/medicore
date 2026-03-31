@@ -12,9 +12,16 @@ export const REDIS_CLIENT = 'REDIS_CLIENT';
       provide: REDIS_CLIENT,
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
+        // Cloud (Upstash) — use REDIS_URL if available
+        const redisUrl = config.get<string>('REDIS_URL');
+        if (redisUrl) {
+          return new Redis(redisUrl, { maxRetriesPerRequest: 3 });
+        }
+        // Local dev — use host/port
         return new Redis({
           host: config.get<string>('REDIS_HOST', 'localhost'),
           port: config.get<number>('REDIS_PORT', 6379),
+          password: config.get<string>('REDIS_PASSWORD', ''),
           maxRetriesPerRequest: 3,
         });
       },
