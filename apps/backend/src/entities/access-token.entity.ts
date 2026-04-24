@@ -32,7 +32,7 @@ export class AccessToken {
   @Column()
   token_hash: string;
 
-  @Column({ type: 'enum', enum: AccessType, default: AccessType.READ_ONLY })
+  @Column({ type: 'varchar', length: 50, default: AccessType.READ_ONLY })
   access_type: AccessType;
 
   @Column({ type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })

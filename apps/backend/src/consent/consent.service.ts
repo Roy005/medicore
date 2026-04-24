@@ -58,33 +58,41 @@ export class ConsentService {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + this.consentExpiryDays);
 
-    const token = this.tokenRepo.create({
-      patient_id: patientId,
-      granted_to_user_id: null, // Any doctor can redeem
-      token_hash: otpHash,
-      access_type: accessType,
-      expires_at: expiresAt,
-    });
-    await this.tokenRepo.save(token);
-
-    // Audit log
-    await this.auditRepo.save(
-      this.auditRepo.create({
-        event_type: 'consent_grant',
-        actor_user_id: user.userId,
+    try {
+      const token = this.tokenRepo.create({
         patient_id: patientId,
-        resource_type: 'consent',
-      }),
-    );
+        granted_to_user_id: null, // Any doctor can redeem
+        token_hash: otpHash,
+        access_type: accessType,
+        expires_at: expiresAt,
+      });
+      await this.tokenRepo.save(token);
 
-    this.logger.log(`Consent token generated for patient ${patientId}`);
+      // Audit log
+      await this.auditRepo.save(
+        this.auditRepo.create({
+          event_type: 'consent_grant',
+          actor_user_id: user.userId,
+          patient_id: patientId,
+          resource_type: 'consent',
+        }),
+      );
 
-    return {
-      otp,
-      tokenId: token.id,
-      accessType: token.access_type,
-      expiresAt: token.expires_at,
-    };
+      this.logger.log(`Consent token generated for patient ${patientId}`);
+
+      return {
+        otp,
+        tokenId: token.id,
+        accessType: token.access_type,
+        expiresAt: token.expires_at,
+      };
+    } catch (error: any) {
+      this.logger.error(
+        `Failed to generate consent token for patient ${patientId}: ${error.message}`,
+        error.stack,
+      );
+      throw error;
+    }
   }
 
   /** Doctor redeems a 6-digit OTP → receives a clinical-access JWT */
