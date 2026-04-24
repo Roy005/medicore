@@ -5,6 +5,7 @@ import { Document, DocumentType } from '../entities/document.entity';
 import { AuditLog } from '../entities/audit-log.entity';
 import { PatientProfile } from '../entities/patient-profile.entity';
 import { AccessToken } from '../entities/access-token.entity';
+import { readFileSync, unlinkSync, existsSync } from 'fs';
 
 @Injectable()
 export class DocumentsService {
@@ -47,6 +48,16 @@ export class DocumentsService {
   async processUpload(patientId: string, file: Express.Multer.File, user: any) {
     await this.authorizeAccess(patientId, user);
 
+    // Read file data from disk (written by multer) and store in DB
+    let fileData: Buffer | null = null;
+    try {
+      fileData = readFileSync(file.path);
+    } catch (err) {
+      this.logger.warn(`Could not read uploaded file from disk: ${(err as Error).message}`);
+      // Fallback: use file.buffer if available (memory storage)
+      fileData = file.buffer || null;
+    }
+
     const document = this.documentRepo.create({
       patient_id: patientId,
       filename: file.filename,
@@ -55,9 +66,19 @@ export class DocumentsService {
       size_bytes: file.size,
       uploaded_by: user.userId,
       document_type: DocumentType.OTHER,
+      file_data: fileData,
     });
 
     const savedDocument = await this.documentRepo.save(document);
+
+    // Clean up disk file since we stored in DB
+    try {
+      if (file.path && existsSync(file.path)) {
+        unlinkSync(file.path);
+      }
+    } catch {
+      // Non-critical: disk cleanup failed
+    }
 
     await this.auditLogRepo.insert({
       event_type: 'document_uploaded',
@@ -67,15 +88,19 @@ export class DocumentsService {
       ip_address: '127.0.0.1', 
     });
 
-    return savedDocument;
+    // Return metadata only (exclude file_data from response)
+    const { file_data, ...metadata } = savedDocument;
+    return metadata;
   }
 
   async listDocuments(patientId: string, user: any) {
     await this.authorizeAccess(patientId, user);
 
+    // Exclude file_data from list queries (it's large binary data)
     return this.documentRepo.find({
       where: { patient_id: patientId },
       order: { upload_date: 'DESC' },
+      select: ['id', 'patient_id', 'filename', 'original_name', 'mimetype', 'size_bytes', 'uploaded_by', 'upload_date', 'document_type', 'created_at'],
     });
   }
 
@@ -99,5 +124,29 @@ export class DocumentsService {
     });
 
     return document;
+  }
+
+  async deleteDocument(docId: string, patientId: string, user: any) {
+    await this.authorizeAccess(patientId, user);
+
+    const document = await this.documentRepo.findOne({
+      where: { id: docId, patient_id: patientId },
+    });
+
+    if (!document) {
+      throw new NotFoundException('Document not found');
+    }
+
+    await this.documentRepo.remove(document);
+
+    await this.auditLogRepo.insert({
+      event_type: 'document_deleted',
+      actor_user_id: user.userId,
+      patient_id: patientId,
+      resource_type: 'document',
+      ip_address: '127.0.0.1',
+    });
+
+    return { message: 'Document deleted successfully' };
   }
 }

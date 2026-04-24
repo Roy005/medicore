@@ -2,6 +2,7 @@ import {
   Controller,
   Post,
   Get,
+  Delete,
   Param,
   UseInterceptors,
   UploadedFile,
@@ -9,14 +10,14 @@ import {
   Request,
   BadRequestException,
   StreamableFile,
+  NotFoundException,
   Res,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { DocumentsService } from './documents.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import type { Request as ExpressRequest, Response as ExpressResponse } from 'express';
-import { createReadStream } from 'fs';
-import { join } from 'path';
+import { Readable } from 'stream';
 
 @UseGuards(JwtAuthGuard)
 @Controller('patients')
@@ -52,13 +53,27 @@ export class DocumentsController {
     @Res({ passthrough: true }) res: ExpressResponse,
   ) {
     const document = await this.documentsService.getDocument(docId, patientId, req.user);
-    const file = createReadStream(join(process.cwd(), 'uploads', patientId, document.filename));
-    
+
+    if (!document.file_data) {
+      throw new NotFoundException('Document file data not available. The file may have been uploaded before database storage was enabled.');
+    }
+
     res.set({
       'Content-Type': document.mimetype,
       'Content-Disposition': `inline; filename="${document.original_name}"`,
     });
-    
-    return new StreamableFile(file);
+
+    const stream = Readable.from(document.file_data);
+    return new StreamableFile(stream);
+  }
+
+  @Delete(':id/documents/:docId')
+  async deleteDocument(
+    @Param('id') patientId: string,
+    @Param('docId') docId: string,
+    @Request() req: ExpressRequest & { user: any },
+  ) {
+    return this.documentsService.deleteDocument(docId, patientId, req.user);
   }
 }
+

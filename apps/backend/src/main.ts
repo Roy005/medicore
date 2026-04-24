@@ -27,15 +27,18 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // Ensure consent-system enum values exist (idempotent V6 migration)
+  // Ensure database schema is up-to-date (idempotent migration checks)
   try {
     const ds = app.get(DataSource);
+    // V6: Consent system enum values
     await ds.query(`ALTER TABLE access_tokens ALTER COLUMN granted_to_user_id DROP NOT NULL`).catch(() => {});
     await ds.query(`ALTER TYPE access_type ADD VALUE IF NOT EXISTS 'clinical_read'`).catch(() => {});
     await ds.query(`ALTER TYPE access_type ADD VALUE IF NOT EXISTS 'clinical_write'`).catch(() => {});
-    logger.log('✅ Consent enum values verified');
+    // V9: Store document file data in database (for ephemeral filesystems)
+    await ds.query(`ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_data BYTEA`).catch(() => {});
+    logger.log('✅ Database schema verified');
   } catch (err) {
-    logger.warn('⚠️ Could not verify consent enum values: ' + (err as Error).message);
+    logger.warn('⚠️ Could not verify database schema: ' + (err as Error).message);
   }
 
   const port = process.env.PORT ?? 3001;

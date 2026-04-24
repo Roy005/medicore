@@ -43,8 +43,12 @@ export class Document {
   @Column({ type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
   upload_date: Date;
 
-  @Column({ type: 'enum', enum: DocumentType, default: DocumentType.OTHER })
+  @Column({ type: 'varchar', length: 50, default: DocumentType.OTHER })
   document_type: DocumentType;
+
+  /** Binary file content stored in the database (for cloud deployments with ephemeral filesystems) */
+  @Column({ type: 'bytea', nullable: true })
+  file_data: Buffer | null;
 
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;
