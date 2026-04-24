@@ -13,11 +13,11 @@ export default function EmergencyLayout({
   return (
     <div
       style={{
-        background: '#FFFFFF',
+        background: '#f8fafb',
         minHeight: '100vh',
         fontFamily:
-          "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
-        color: '#111111',
+          "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+        color: '#191c1d',
         WebkitFontSmoothing: 'antialiased',
       }}
     >

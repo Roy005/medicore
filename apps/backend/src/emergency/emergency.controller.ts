@@ -65,6 +65,16 @@ export class EmergencyController {
   // ─── PUBLIC ENDPOINT (no auth) ───────────────────────────────
 
   /**
+   * GET /api/v1/emergency/:token/data
+   * Public endpoint — returns emergency snapshot JSON for a given QR token.
+   * Called by the frontend emergency page (works on Vercel with no filesystem).
+   */
+  @Get('emergency/:token/data')
+  async getSnapshotByToken(@Param('token') token: string) {
+    return this.emergencyService.getSnapshotByToken(token);
+  }
+
+  /**
    * POST /api/v1/emergency/:token/log
    * Async access logging — called from the static emergency page.
    * Intentionally unauthenticated. Never blocks, never errors to caller.

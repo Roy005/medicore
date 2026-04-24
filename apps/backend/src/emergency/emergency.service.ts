@@ -5,6 +5,7 @@ import {
   InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as crypto from 'crypto';
@@ -22,7 +23,7 @@ import {
 import { Vital } from '../entities/vital.entity';
 
 /** Shape of the static emergency snapshot JSON */
-interface EmergencySnapshot {
+export interface EmergencySnapshot {
   patientName: string;
   bloodGroup: string | null;
   allergies: { allergen: string; severity: string; reaction: string | null }[];
@@ -61,6 +62,7 @@ export class EmergencyService {
     private readonly auditRepo: Repository<AuditLog>,
     @InjectRepository(AccessToken)
     private readonly accessTokenRepo: Repository<AccessToken>,
+    private readonly configService: ConfigService,
   ) {
     // Resolve snapshot directory relative to the backend package root
     // backend is at apps/backend → frontend public is at apps/frontend/public
@@ -251,13 +253,32 @@ export class EmergencyService {
     return { token, generatedAt: snapshot.generatedAt };
   }
 
+  // ─── PUBLIC SNAPSHOT BY TOKEN ──────────────────────────────
+  /**
+   * Public endpoint: fetch live emergency snapshot by QR token.
+   * No auth required — this is what the emergency page calls.
+   */
+  async getSnapshotByToken(token: string): Promise<EmergencySnapshot> {
+    if (!/^[a-f0-9]+$/i.test(token)) {
+      throw new NotFoundException('Invalid emergency token');
+    }
+
+    const profile = await this.profileRepo.findOne({
+      where: { emergency_qr_token: token },
+    });
+    if (!profile) throw new NotFoundException('Emergency data not found for this token');
+
+    return this.buildSnapshot(profile);
+  }
+
   // ─── QR CODE GENERATION ────────────────────────────────────
   async generateQrCode(patientId: string): Promise<Buffer> {
     const profile = await this.profileRepo.findOne({ where: { id: patientId } });
     if (!profile) throw new NotFoundException('Patient profile not found');
 
     const token = await this.ensureToken(patientId);
-    const url = `https://medicore.app/emergency/${token}`;
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000';
+    const url = `${frontendUrl}/emergency/${token}`;
 
     const buffer = await QRCode.toBuffer(url, {
       type: 'png',
