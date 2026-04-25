@@ -127,4 +127,43 @@ export class DoctorService {
 
     return Array.from(patientMap.values());
   }
+
+  /** Doctor voluntarily revokes their own access to a specific patient */
+  async revokePatientAccess(patientId: string, user: { userId: string; role: string }) {
+    if (user.role !== 'doctor') {
+      throw new ForbiddenException('Only doctors can revoke their own patient access');
+    }
+
+    // Find all active (non-revoked) tokens for this doctor+patient pair
+    const tokens = await this.accessTokenRepo
+      .createQueryBuilder('token')
+      .where('token.patient_id = :patientId', { patientId })
+      .andWhere('token.granted_to_user_id = :userId', { userId: user.userId })
+      .andWhere('token.revoked_at IS NULL')
+      .getMany();
+
+    if (tokens.length === 0) {
+      throw new NotFoundException('No active consent tokens found for this patient');
+    }
+
+    // Revoke all matching tokens
+    const now = new Date();
+    for (const token of tokens) {
+      token.revoked_at = now;
+    }
+    await this.accessTokenRepo.save(tokens);
+
+    // Audit log
+    await this.auditRepo.save(
+      this.auditRepo.create({
+        event_type: 'doctor_consent_revoke',
+        actor_user_id: user.userId,
+        patient_id: patientId,
+        resource_type: 'consent',
+      }),
+    );
+
+    this.logger.log(`Doctor ${user.userId} revoked access to patient ${patientId} (${tokens.length} token(s))`);
+    return { message: 'Access revoked successfully', revokedCount: tokens.length };
+  }
 }

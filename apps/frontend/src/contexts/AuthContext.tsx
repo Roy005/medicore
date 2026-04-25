@@ -65,6 +65,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
+      // FIX: Clear per-patient clinical token map on sign-out
+      localStorage.removeItem('medicore_doctor_tokens');
       setUser(null);
       window.location.href = '/login';
     }

@@ -29,7 +29,14 @@ function PrescriptionModal({ isOpen, onClose, patientId, onRefresh }: {
   // Common notes
   const [additionalNotes, setAdditionalNotes] = useState('');
 
-  const clinicalToken = typeof window !== 'undefined' ? localStorage.getItem('clinicalToken') : null;
+  // FIX: Read token from per-patient map instead of single key
+  const clinicalToken = (() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const map = JSON.parse(localStorage.getItem('medicore_doctor_tokens') || '{}');
+      return map[patientId] || null;
+    } catch { return null; }
+  })();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -191,7 +198,14 @@ export default function PatientEHRPage() {
   const [isPrescribeOpen, setIsPrescribeOpen] = useState(false);
   const [viewingDoc, setViewingDoc] = useState<string | null>(null);
 
-  const clinicalToken = typeof window !== 'undefined' ? localStorage.getItem('clinicalToken') : null;
+  // FIX: Read token from per-patient map instead of single key
+  const clinicalToken = (() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const map = JSON.parse(localStorage.getItem('medicore_doctor_tokens') || '{}');
+      return map[patientId] || null;
+    } catch { return null; }
+  })();
 
   const fetchEHR = useCallback(async () => {
     const headers: Record<string, string> = {};

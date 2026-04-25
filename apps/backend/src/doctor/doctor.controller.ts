@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Patch,
+  Delete,
   Param,
   Body,
   UseGuards,
@@ -26,6 +27,16 @@ export class DoctorController {
     return this.doctorService.getMyPatients(req.user);
   }
 
+  /** DELETE /api/v1/doctors/consent/:patientId — doctor revokes own access to a patient */
+  @Delete('consent/:patientId')
+  @Roles(UserRole.DOCTOR)
+  async revokePatientAccess(
+    @Param('patientId') patientId: string,
+    @Req() req: any,
+  ) {
+    return this.doctorService.revokePatientAccess(patientId, req.user);
+  }
+
   /** GET /api/v1/doctors/:id/profile — doctor's own profile */
   @Get(':id/profile')
   @Roles(UserRole.DOCTOR)
@@ -47,4 +58,3 @@ export class DoctorController {
     return this.doctorService.updateProfile(id, dto, req.user);
   }
 }
-

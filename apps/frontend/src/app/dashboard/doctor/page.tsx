@@ -1,21 +1,53 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import api from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
-import { Search, Key, ArrowRight, Users, Shield } from 'lucide-react';
+import { Search, Key, ArrowRight, Users, Shield, X } from 'lucide-react';
+
+// --- Per-patient token map helpers ---
+// FIX: Previously stored as a single `clinicalToken` key, which got overwritten
+// on each new redemption. Now stored as a { [patientId]: token } map so every
+// patient's token is preserved independently.
+const TOKEN_MAP_KEY = 'medicore_doctor_tokens';
+
+function loadTokenMap(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  try {
+    return JSON.parse(localStorage.getItem(TOKEN_MAP_KEY) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function saveTokenMap(map: Record<string, string>) {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(TOKEN_MAP_KEY, JSON.stringify(map));
+}
+
+function setPatientToken(patientId: string, token: string) {
+  const map = loadTokenMap();
+  map[patientId] = token;
+  saveTokenMap(map);
+}
+
+function removePatientToken(patientId: string) {
+  const map = loadTokenMap();
+  delete map[patientId];
+  saveTokenMap(map);
+}
 
 export default function DoctorPatientsPage() {
   const { user } = useAuth();
   const [otp, setOtp] = useState('');
   const [otpLoading, setOtpLoading] = useState(false);
   const [otpError, setOtpError] = useState('');
-  const [clinicalToken, setClinicalToken] = useState<string | null>(null);
-  const [patientId, setPatientId] = useState<string | null>(null);
   const [redeemResult, setRedeemResult] = useState<any>(null);
   const [myPatients, setMyPatients] = useState<any[]>([]);
   const [loadingPatients, setLoadingPatients] = useState(true);
+  // Track which patient row is in "Confirm?" state for removal
+  const [confirmingRemove, setConfirmingRemove] = useState<string | null>(null);
 
   const fetchMyPatients = async () => {
     try {
@@ -43,17 +75,39 @@ export default function DoctorPatientsPage() {
     setOtpError('');
     try {
       const res = await api.post('/consent/redeem', { otp });
-      setClinicalToken(res.data.clinicalToken);
-      setPatientId(res.data.patientId);
       setRedeemResult(res.data);
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('clinicalToken', res.data.clinicalToken);
-        localStorage.setItem('clinicalPatientId', res.data.patientId);
-      }
+
+      // FIX: Store token keyed by patientId instead of overwriting a single key
+      setPatientToken(res.data.patientId, res.data.clinicalToken);
+
+      // Refresh patient list to include the newly redeemed patient
+      fetchMyPatients();
     } catch (err: any) {
       setOtpError(err.response?.data?.message || 'Invalid or expired consent code');
     } finally {
       setOtpLoading(false);
+    }
+  };
+
+  // --- Remove Patient: inline confirmation pattern ---
+  const handleRemoveClick = (patientId: string) => {
+    // First click: enter "Confirm?" state with 3-second auto-cancel
+    setConfirmingRemove(patientId);
+    setTimeout(() => {
+      setConfirmingRemove((current) => (current === patientId ? null : current));
+    }, 3000);
+  };
+
+  const handleRemoveConfirm = async (patientId: string) => {
+    setConfirmingRemove(null);
+    try {
+      await api.delete(`/doctors/consent/${patientId}`);
+      // Remove from local token map
+      removePatientToken(patientId);
+      // Remove from UI without full page reload
+      setMyPatients((prev) => prev.filter((p) => p.id !== patientId));
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to remove patient');
     }
   };
 
@@ -198,7 +252,7 @@ export default function DoctorPatientsPage() {
                   <th className="px-4 py-3 rounded-tl-lg">Patient Name</th>
                   <th className="px-4 py-3">Access Level</th>
                   <th className="px-4 py-3">Access Granted</th>
-                  <th className="px-4 py-3 rounded-tr-lg text-right">Action</th>
+                  <th className="px-4 py-3 rounded-tr-lg text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -214,12 +268,32 @@ export default function DoctorPatientsPage() {
                       {new Date(p.lastAccessGrantedAt).toLocaleString()}
                     </td>
                     <td className="px-4 py-4 text-right">
-                      <Link 
-                        href={`/dashboard/doctor/patients/${p.id}`}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-[#005454]/10 text-[#005454] font-semibold rounded-md hover:bg-[#005454]/20 transition-colors"
-                      >
-                        Open EHR <ArrowRight className="w-3 h-3" />
-                      </Link>
+                      <div className="inline-flex items-center gap-2">
+                        {/* Open EHR button */}
+                        <Link 
+                          href={`/dashboard/doctor/patients/${p.id}`}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-[#005454]/10 text-[#005454] font-semibold rounded-md hover:bg-[#005454]/20 transition-colors"
+                        >
+                          Open EHR <ArrowRight className="w-3 h-3" />
+                        </Link>
+
+                        {/* Remove button — inline confirmation pattern */}
+                        {confirmingRemove === p.id ? (
+                          <button
+                            onClick={() => handleRemoveConfirm(p.id)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 border border-[#ba1a1a] text-[#ba1a1a] font-semibold rounded-md bg-[#ffdad6] hover:bg-[#ba1a1a] hover:text-white transition-colors"
+                          >
+                            <X className="w-3 h-3" /> Confirm?
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleRemoveClick(p.id)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 border border-[#ba1a1a]/40 text-[#ba1a1a] font-semibold rounded-md hover:bg-[#ffdad6] transition-colors"
+                          >
+                            <X className="w-3 h-3" /> Remove
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
