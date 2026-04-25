@@ -93,11 +93,18 @@ export class DoctorService {
       throw new ForbiddenException('Only doctors can access their patient list');
     }
 
-    const tokens = await this.accessTokenRepo.find({
-      where: { granted_to_user_id: user.userId },
-      relations: ['patient', 'patient.user'],
-      order: { granted_at: 'DESC' }
-    });
+    // FIX: Filter by revoked_at IS NULL AND expires_at > NOW() so that
+    // revoked and expired patients do not reappear on page refresh.
+    // Previously this query returned ALL tokens regardless of status.
+    const tokens = await this.accessTokenRepo
+      .createQueryBuilder('token')
+      .leftJoinAndSelect('token.patient', 'patient')
+      .leftJoinAndSelect('patient.user', 'user')
+      .where('token.granted_to_user_id = :userId', { userId: user.userId })
+      .andWhere('token.revoked_at IS NULL')                   // exclude revoked tokens
+      .andWhere('(token.expires_at IS NULL OR token.expires_at > NOW())')  // exclude expired tokens
+      .orderBy('token.granted_at', 'DESC')
+      .getMany();
 
     // Extract unique patients with brief details
     const patientMap = new Map<string, any>();
@@ -146,17 +153,17 @@ export class DoctorService {
       throw new NotFoundException('No active consent tokens found for this patient');
     }
 
-    // Revoke all matching tokens
+    // Revoke all matching tokens — set revoked_at, do NOT delete (audit trail)
     const now = new Date();
     for (const token of tokens) {
       token.revoked_at = now;
     }
     await this.accessTokenRepo.save(tokens);
 
-    // Audit log
+    // Audit log — event_type matches spec: 'consent_revoked'
     await this.auditRepo.save(
       this.auditRepo.create({
-        event_type: 'doctor_consent_revoke',
+        event_type: 'consent_revoked',  // FIX: was 'doctor_consent_revoke', spec requires 'consent_revoked'
         actor_user_id: user.userId,
         patient_id: patientId,
         resource_type: 'consent',

@@ -1,0 +1,18 @@
+{
+  "patientName": "123",
+  "bloodGroup": null,
+  "allergies": [],
+  "activeMedications": [],
+  "chronicConditions": [],
+  "emergencyContacts": [],
+  "lastVitalsSnapshot": {
+    "bp": null,
+    "hr": null,
+    "spo2": null,
+    "glucose": null,
+    "recordedAt": null
+  },
+  "aiWarningFlags": [],
+  "generatedAt": "2026-04-25T15:01:19.673Z",
+  "warningMessage": "This data was last updated at 4/25/2026, 3:01:19 PM"
+}

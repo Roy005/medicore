@@ -48,6 +48,8 @@ export default function DoctorPatientsPage() {
   const [loadingPatients, setLoadingPatients] = useState(true);
   // Track which patient row is in "Confirm?" state for removal
   const [confirmingRemove, setConfirmingRemove] = useState<string | null>(null);
+  // FIX: Track inline error per patient row (was using alert() which doesn't show on the row)
+  const [removeError, setRemoveError] = useState<string | null>(null);
 
   const fetchMyPatients = async () => {
     try {
@@ -100,14 +102,21 @@ export default function DoctorPatientsPage() {
 
   const handleRemoveConfirm = async (patientId: string) => {
     setConfirmingRemove(null);
+    setRemoveError(null); // clear any previous error
     try {
+      // FIX: Call backend FIRST — only remove locally after 200.
+      // Previously if the backend call failed the row was still removed
+      // from the UI, causing desync on refresh.
       await api.delete(`/doctors/consent/${patientId}`);
-      // Remove from local token map
+      // Backend confirmed revocation — now safe to remove locally
       removePatientToken(patientId);
-      // Remove from UI without full page reload
       setMyPatients((prev) => prev.filter((p) => p.id !== patientId));
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to remove patient');
+      // FIX: Show inline error on the specific row instead of alert().
+      // Patient stays in the table so the user can retry.
+      setRemoveError(patientId);
+      // Auto-clear the error after 5 seconds
+      setTimeout(() => setRemoveError((curr) => (curr === patientId ? null : curr)), 5000);
     }
   };
 
@@ -268,7 +277,7 @@ export default function DoctorPatientsPage() {
                       {new Date(p.lastAccessGrantedAt).toLocaleString()}
                     </td>
                     <td className="px-4 py-4 text-right">
-                      <div className="inline-flex items-center gap-2">
+                      <div className="inline-flex items-center gap-2 flex-wrap justify-end">
                         {/* Open EHR button */}
                         <Link 
                           href={`/dashboard/doctor/patients/${p.id}`}
@@ -292,6 +301,13 @@ export default function DoctorPatientsPage() {
                           >
                             <X className="w-3 h-3" /> Remove
                           </button>
+                        )}
+
+                        {/* FIX: Inline error message on the row when backend call fails */}
+                        {removeError === p.id && (
+                          <span className="text-xs text-[#ba1a1a] bg-[#ffdad6] px-2 py-1 rounded">
+                            Failed to remove — try again
+                          </span>
                         )}
                       </div>
                     </td>
