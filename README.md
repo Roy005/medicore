@@ -41,7 +41,8 @@ The platform's flagship feature — the **Emergency QR Access System** — allow
 
 ### 🚨 Emergency QR Access (Core Value Proposition)
 - One-scan emergency medical summary — **works offline, no login needed**
-- Static HTML served via **CloudFront CDN** — loads in < 8 seconds on 3G
+- **Modernized "Stitch" Design System** providing a professional, clinical, and high-contrast UI
+- Cloud deployed via Vercel ensuring high availability for critical situations
 - Independent from the main backend — works even if the API is completely down
 - QR token rotation for security, rate-limited at the WAF layer
 - Push notifications to patients when their QR is scanned
@@ -69,10 +70,11 @@ The platform's flagship feature — the **Emergency QR Access System** — allow
 - Symptom journaling and medication adherence tracking
 
 ### 🧠 AI Intelligence Layer
+- **Gemini AI Integration** for real-time health chat, symptom analysis, and risk assessment functionality
 - **LSTM Autoencoder** for personalized vitals anomaly detection (activates after 30 days of patient data)
 - **XGBoost + SHAP** risk scoring for cardiovascular disease, Type 2 Diabetes, and hypertension
 - Every risk score accompanied by top-5 SHAP explanations in plain English
-- **RAG Health Advisor** powered by Claude with constitutional safety constraints:
+- **RAG Health Advisor** powered by Gemini with constitutional safety constraints:
   - Never provides diagnoses — only observations and recommendations
   - Immediate crisis protocol for self-harm mentions
   - All responses cite patient records or retrieved medical guidelines
@@ -152,12 +154,31 @@ The platform is built as **7 independently deployable modules**, each with its o
 |-------|-----------|
 | **Backend** | Node.js + NestJS + TypeScript |
 | **Frontend** | Next.js 14 + TypeScript + Tailwind CSS |
-| **Database** | PostgreSQL 16 |
-| **Cache** | Redis 7 |
+| **Database** | PostgreSQL 16 (Neon Serverless) |
+| **Cache** | Redis (Upstash) |
 | **Auth** | Manual JWT + bcrypt |
-| **File Storage** | Local filesystem |
-| **Infrastructure** | Docker Compose (local dev) |
+| **File Storage** | Database Blob Storage |
+| **AI Integration** | Google Gemini AI |
+| **Infrastructure** | Vercel (Frontend), Render (Backend), Docker Compose (Local) |
 | **CI/CD** | GitHub Actions |
+
+## 🛤️ Current Development & Future Plans
+
+**Phase 1: Core Portal & Emergency Access (Completed ✅)**
+- End-to-end Patient and Doctor profiles with secure authentication and consent tokens
+- Emergency Medical Data page redesign with the professional "Stitch" design system
+- Cloud deployments completed across Vercel (Frontend), Render (Backend), Neon (DB), and Upstash (Redis)
+- Real-time Gemini AI chat and risk assessment integrated into patient modules
+
+**Phase 2: Vitals & Advanced Monitoring (In Progress 🚧)**
+- Integrate Kafka event pipeline for continuous vitals streaming
+- Implement TimescaleDB for metrics aggregation
+- Finalize the rule-based alert engine for tiered severities
+
+**Phase 3: Hospital SaaS Workspace (Planned 🗓️)**
+- Multi-tenant hospital onboarding and department management
+- Live patient admission, discharge, and bed management
+- Hospital analytics dashboard and outbreak cluster detection
 
 ## 🚀 Getting Started
 
