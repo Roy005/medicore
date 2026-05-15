@@ -14,6 +14,8 @@ class Settings:
     """Application settings loaded from environment variables."""
 
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
+    OPENROUTER_MODEL: str = os.getenv("OPENROUTER_MODEL", "google/gemma-4-27b-it:free")
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL",
         "postgresql://medicore:medicore_secret@localhost:5432/medicore",

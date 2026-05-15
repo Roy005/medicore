@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+// OpenRouter API used via axios — no SDK import needed
 import axios from 'axios';
 
 import { Medication, Allergy, Diagnosis, Vital, PatientProfile, AuditLog } from '../entities';
@@ -130,7 +130,7 @@ export class AiService {
       }
     }
 
-    // 2. Fallback to Local Gemini Adapter
+    // 2. Fallback to Local OpenRouter Adapter
     try {
       const context = await this.getPatientContext(patientId);
 
@@ -178,29 +178,38 @@ ABSOLUTE RULES — violating any rule is a critical failure:
 PATIENT HEALTH RECORDS:
 ${contextString}`;
 
-      const genAI = new GoogleGenerativeAI(
-        this.configService.get<string>('GEMINI_API_KEY') || ''
-      );
-      const model = genAI.getGenerativeModel({ 
-        model: 'gemini-1.5-flash',
-        systemInstruction: SYSTEM_PROMPT,
-        generationConfig: {
-          maxOutputTokens: 500,
+      const openrouterKey = this.configService.get<string>('OPENROUTER_API_KEY') || '';
+      const openrouterModel = this.configService.get<string>('OPENROUTER_MODEL') || 'google/gemma-4-27b-it:free';
+
+      const messages = [
+        { role: 'system', content: SYSTEM_PROMPT },
+        ...conversationHistory.map(msg => ({
+          role: msg.role === 'assistant' ? 'assistant' : 'user',
+          content: msg.content,
+        })),
+        { role: 'user', content: message },
+      ];
+
+      const response = await axios.post(
+        'https://openrouter.ai/api/v1/chat/completions',
+        {
+          model: openrouterModel,
+          messages,
+          max_tokens: 500,
           temperature: 0.3,
-        }
-      });
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${openrouterKey}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': 'https://medicore-ebon.vercel.app',
+            'X-Title': 'MediCore AI Health Advisor',
+          },
+          timeout: 30000,
+        },
+      );
 
-      const history = conversationHistory.map(msg => ({
-        role: msg.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: msg.content }]
-      }));
-
-      const chat = model.startChat({
-        history: history
-      });
-
-      const result = await chat.sendMessage(message);
-      const reply = result.response.text();
+      const reply = response.data.choices[0].message.content;
 
       const safetyKeywords = [
         'icall', '9152987821', 'concerned about what you shared',
@@ -216,8 +225,7 @@ ${contextString}`;
         sources: ['Patient Health Records'] 
       };
     } catch (error: any) {
-      this.logger.error('Gemini API error', error);
-      require('fs').appendFileSync('ai-debug.log', 'CHAT ERROR: ' + (error.stack || error.message || String(error)) + '\n');
+      this.logger.error('OpenRouter API error', error?.response?.data || error?.message || error);
       return { 
         reply: "I'm temporarily unavailable. Please try again shortly.", 
         safetyFlag: false, 
