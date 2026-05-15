@@ -63,7 +63,7 @@ class LLMService:
 
         # Initialize the model
         self.model = genai.GenerativeModel(  # pyright: ignore[reportPrivateImportUsage]
-            model_name="gemini-2.0-flash",
+            model_name="gemini-1.5-flash",
             generation_config=genai.GenerationConfig(  # pyright: ignore[reportPrivateImportUsage]
                 max_output_tokens=500,
                 temperature=0.3,
@@ -120,7 +120,7 @@ class LLMService:
         for attempt in range(self.MAX_RETRIES):
             try:
                 model_with_context = genai.GenerativeModel(  # pyright: ignore[reportPrivateImportUsage]
-                    model_name="gemini-2.0-flash",
+                    model_name="gemini-1.5-flash",
                     generation_config=genai.GenerationConfig(  # pyright: ignore[reportPrivateImportUsage]
                         max_output_tokens=500,
                         temperature=0.3,
