@@ -43,11 +43,10 @@ export class DocumentExtractionService implements OnModuleInit {
       const pendingDocs = await this.documentRepo.find({
         where: [
           { extraction_status: 'pending', file_data: Not(IsNull()) },
-          // Also catch documents that pre-date the extraction_status column
-          // (they'll have NULL or empty extraction_status)
+          { extraction_status: 'failed', file_data: Not(IsNull()) },
         ],
         select: ['id', 'original_name', 'mimetype'],
-        take: 50, // Process max 50 at a time to avoid overload
+        take: 50,
       });
 
       if (pendingDocs.length === 0) {
@@ -129,14 +128,49 @@ export class DocumentExtractionService implements OnModuleInit {
   // ── PDF Extraction ──────────────────────────────────────────────────
 
   private async extractFromPdf(buffer: Buffer): Promise<string> {
+    // Try pdf-parse v2 API first (PDFParse class), then fall back to Gemini Vision
     try {
-      const pdfParse = require('pdf-parse');
-      const data = await pdfParse(buffer);
-      return data.text || '';
+      const { PDFParse } = require('pdf-parse');
+      const parser = new PDFParse({ verbosity: 0 });
+      await parser.load(buffer);
+
+      // Collect text from all pages
+      const pageTexts: string[] = [];
+      const numPages = parser.getInfo()?.numPages || 0;
+      for (let i = 1; i <= numPages; i++) {
+        try {
+          const pageText = await parser.getPageText(i);
+          if (pageText) pageTexts.push(pageText);
+        } catch {
+          // Skip pages that fail to parse
+        }
+      }
+
+      const fullText = pageTexts.join('\n\n');
+      if (fullText.trim().length > 0) {
+        this.logger.log(`pdf-parse extracted ${fullText.trim().length} chars from ${numPages} pages`);
+        return fullText;
+      }
     } catch (err: any) {
-      this.logger.error(`pdf-parse error: ${err.message}`);
-      return '';
+      this.logger.warn(`pdf-parse failed (${err.message}), trying Gemini Vision for PDF...`);
     }
+
+    // Fallback: Use Gemini Vision to extract text from the PDF
+    // (handles scanned PDFs where pdf-parse finds no embedded text)
+    const geminiKey = this.configService.get<string>('GEMINI_API_KEY');
+    if (geminiKey) {
+      try {
+        const text = await this.extractWithGeminiVision(buffer, 'application/pdf', geminiKey);
+        if (text && text.trim().length > 0) {
+          this.logger.log('PDF text extracted via Gemini Vision fallback ✓');
+          return text;
+        }
+      } catch (err: any) {
+        this.logger.warn(`Gemini Vision PDF fallback also failed: ${err.message}`);
+      }
+    }
+
+    return '';
   }
 
   // ── Image Extraction (Gemini Vision primary → Tesseract.js fallback) ──
