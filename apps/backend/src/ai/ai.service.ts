@@ -35,18 +35,21 @@ export class AiService {
   ) {}
 
   private async getPatientContext(patientId: string) {
+    // The controller passes user_id — resolve it to patient_profile.id
     const profile = await this.profileRepo.findOne({ where: { user_id: patientId } });
-    const activeMedications = await this.medicationRepo.find({ where: { patient_id: patientId, is_active: true } });
+    const profileId = profile?.id || patientId; // Use profile.id for all data queries
+
+    const activeMedications = await this.medicationRepo.find({ where: { patient_id: profileId, is_active: true } });
     let allergies: Allergy[] = [];
-    try { allergies = await this.allergyRepo.find({ where: { patient_id: patientId } }); } catch(e) {}
+    try { allergies = await this.allergyRepo.find({ where: { patient_id: profileId } }); } catch(e) {}
     
     let activeConditions: Diagnosis[] = [];
-    try { activeConditions = await this.diagnosisRepo.find({ where: { patient_id: patientId, status: 'active' as any } }); } catch(e) {}
+    try { activeConditions = await this.diagnosisRepo.find({ where: { patient_id: profileId, status: 'active' as any } }); } catch(e) {}
 
     const metrics = ['heart_rate', 'blood_pressure_systolic', 'blood_pressure_diastolic', 'spo2', 'blood_glucose', 'weight'];
     const vitalsPromises = metrics.map(metric => 
       this.vitalRepo.findOne({
-        where: { patient_id: patientId, metric_type: metric },
+        where: { patient_id: profileId, metric_type: metric },
         order: { recorded_at: 'DESC' },
       })
     );
@@ -90,7 +93,7 @@ export class AiService {
     let uploadedDocs: {name: string; type: string; content: string}[] = [];
     try {
       const documents = await this.documentRepo.find({
-        where: { patient_id: patientId, extraction_status: 'completed' },
+        where: { patient_id: profileId, extraction_status: 'completed' },
         select: ['original_name', 'document_type', 'extracted_text', 'upload_date'],
         order: { upload_date: 'DESC' },
         take: 10,

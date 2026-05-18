@@ -57,6 +57,13 @@ class PatientContextService:
         # We use standard SQL syntax that matches the workplan requirements.
 
         async with db.acquire() as conn:
+            # 0. Resolve user_id → patient_profile.id
+            # The controller passes user_id, but all data tables use patient_profiles.id
+            profile_id_row = await conn.fetchrow(
+                "SELECT id FROM patient_profiles WHERE user_id = $1", patient_id
+            )
+            actual_id = profile_id_row["id"] if profile_id_row else patient_id
+
             # 1. Demographics
             demo_query = """
                 SELECT p.blood_group, p.demographics->>'gender' as gender, p.date_of_birth,
@@ -64,7 +71,7 @@ class PatientContextService:
                 FROM patient_profiles p
                 WHERE p.id = $1
             """
-            demo_record = await conn.fetchrow(demo_query, patient_id)
+            demo_record = await conn.fetchrow(demo_query, actual_id)
             demographics = {}
             if demo_record:
                 demographics = {
@@ -79,7 +86,7 @@ class PatientContextService:
                 FROM medications
                 WHERE patient_id = $1 AND is_active = true
             """
-            med_records = await conn.fetch(meds_query, patient_id)
+            med_records = await conn.fetch(meds_query, actual_id)
             meds = [
                 {
                     "name": r["name"],
@@ -97,7 +104,7 @@ class PatientContextService:
                 FROM allergies
                 WHERE patient_id = $1
             """
-            allergy_records = await conn.fetch(allergies_query, patient_id)
+            allergy_records = await conn.fetch(allergies_query, actual_id)
             allergies = [dict(r) for r in allergy_records]
 
             # 4. Active Conditions (Diagnoses)
@@ -106,7 +113,7 @@ class PatientContextService:
                 FROM diagnoses
                 WHERE patient_id = $1 AND status = 'active'
             """
-            cond_records = await conn.fetch(conditions_query, patient_id)
+            cond_records = await conn.fetch(conditions_query, actual_id)
             conditions = [
                 {
                     "name": r["name"],
@@ -130,7 +137,7 @@ class PatientContextService:
                 WHERE rn <= 30
                 ORDER BY metric_type, recorded_at DESC
             """
-            vitals_records = await conn.fetch(vitals_query, patient_id)
+            vitals_records = await conn.fetch(vitals_query, actual_id)
             
             # Group into history and calculate simple aggregates in Python for speed
             vitals_history: List[Dict[str, Any]] = []
@@ -183,7 +190,7 @@ class PatientContextService:
                 ORDER BY created_at DESC
                 LIMIT 5
             """
-            alert_records = await conn.fetch(alerts_query, patient_id)
+            alert_records = await conn.fetch(alerts_query, actual_id)
             alerts = [
                 {
                     "tier": r["tier"],
@@ -204,7 +211,7 @@ class PatientContextService:
                 LIMIT 10
             """
             try:
-                doc_records = await conn.fetch(docs_query, patient_id)
+                doc_records = await conn.fetch(docs_query, actual_id)
                 uploaded_docs = [
                     {
                         "name": r["original_name"],
