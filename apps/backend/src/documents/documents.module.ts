@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ConfigModule } from '@nestjs/config';
 import { MulterModule } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { randomUUID } from 'crypto';
@@ -7,6 +8,7 @@ import { extname } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import { DocumentsController } from './documents.controller';
 import { DocumentsService } from './documents.service';
+import { DocumentExtractionService } from './document-extraction.service';
 import { Document } from '../entities/document.entity';
 import { AuditLog } from '../entities/audit-log.entity';
 import { PatientProfile } from '../entities/patient-profile.entity';
@@ -14,6 +16,7 @@ import { AccessToken } from '../entities/access-token.entity';
 
 @Module({
   imports: [
+    ConfigModule,
     TypeOrmModule.forFeature([Document, AuditLog, PatientProfile, AccessToken]),
     MulterModule.register({
       storage: diskStorage({
@@ -44,6 +47,7 @@ import { AccessToken } from '../entities/access-token.entity';
     }),
   ],
   controllers: [DocumentsController],
-  providers: [DocumentsService],
+  providers: [DocumentsService, DocumentExtractionService],
+  exports: [DocumentExtractionService],
 })
 export class DocumentsModule {}

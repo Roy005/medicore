@@ -5,6 +5,7 @@ import { Document, DocumentType } from '../entities/document.entity';
 import { AuditLog } from '../entities/audit-log.entity';
 import { PatientProfile } from '../entities/patient-profile.entity';
 import { AccessToken } from '../entities/access-token.entity';
+import { DocumentExtractionService } from './document-extraction.service';
 import { readFileSync, unlinkSync, existsSync } from 'fs';
 
 @Injectable()
@@ -20,6 +21,7 @@ export class DocumentsService {
     private readonly profileRepo: Repository<PatientProfile>,
     @InjectRepository(AccessToken)
     private readonly accessTokenRepo: Repository<AccessToken>,
+    private readonly extractionService: DocumentExtractionService,
   ) {}
 
   private async authorizeAccess(patientId: string, user: any) {
@@ -88,8 +90,13 @@ export class DocumentsService {
       ip_address: '127.0.0.1', 
     });
 
-    // Return metadata only (exclude file_data from response)
-    const { file_data, ...metadata } = savedDocument;
+    // Fire-and-forget text extraction (don't block the upload response)
+    this.extractionService.extractAndSave(savedDocument.id).catch(err =>
+      this.logger.warn(`Text extraction failed for doc ${savedDocument.id}: ${err.message}`),
+    );
+
+    // Return metadata only (exclude file_data and extracted_text from response)
+    const { file_data, extracted_text, ...metadata } = savedDocument;
     return metadata;
   }
 

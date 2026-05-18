@@ -50,6 +50,14 @@ export class Document {
   @Column({ type: 'bytea', nullable: true })
   file_data: Buffer | null;
 
+  /** Extracted text content from the document (via pdf-parse or OCR) */
+  @Column({ type: 'text', nullable: true })
+  extracted_text: string | null;
+
+  /** Status of text extraction: pending, completed, or failed */
+  @Column({ type: 'varchar', length: 20, default: 'pending' })
+  extraction_status: string;
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;
 }

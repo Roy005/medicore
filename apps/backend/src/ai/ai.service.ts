@@ -2,10 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
-// OpenRouter API used via axios — no SDK import needed
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import axios from 'axios';
 
 import { Medication, Allergy, Diagnosis, Vital, PatientProfile, AuditLog } from '../entities';
+import { Document } from '../entities/document.entity';
 
 @Injectable()
 export class AiService {
@@ -28,6 +29,8 @@ export class AiService {
     private readonly profileRepo: Repository<PatientProfile>,
     @InjectRepository(AuditLog)
     private readonly auditRepo: Repository<AuditLog>,
+    @InjectRepository(Document)
+    private readonly documentRepo: Repository<Document>,
     private readonly configService: ConfigService,
   ) {}
 
@@ -83,6 +86,26 @@ export class AiService {
       age = Math.floor(diff / (1000 * 60 * 60 * 24 * 365.25));
     }
 
+    // 7. Uploaded Documents (extracted text)
+    let uploadedDocs: {name: string; type: string; content: string}[] = [];
+    try {
+      const documents = await this.documentRepo.find({
+        where: { patient_id: patientId, extraction_status: 'completed' },
+        select: ['original_name', 'document_type', 'extracted_text', 'upload_date'],
+        order: { upload_date: 'DESC' },
+        take: 10,
+      });
+      uploadedDocs = documents
+        .filter(d => d.extracted_text)
+        .map(d => ({
+          name: d.original_name,
+          type: d.document_type,
+          content: d.extracted_text!.substring(0, 2000),
+        }));
+    } catch (e) {
+      // documents table may not have extracted_text column yet
+    }
+
     return {
       bloodGroup: profile?.blood_group || 'Unknown',
       age,
@@ -101,6 +124,7 @@ export class AiService {
         description: c.icd10_description,
       })),
       latestVitals,
+      uploadedDocs,
     };
   }
 
@@ -112,7 +136,7 @@ export class AiService {
         patientId,
         message,
         conversationHistory
-      }, { timeout: 8000 });
+      }, { timeout: 15000 });
       
       if (response.data && response.data.reply) {
         return {
@@ -123,14 +147,13 @@ export class AiService {
       }
     } catch (error: any) {
       const isRateLimit = error?.response?.status === 429;
-      this.logger.warn(`Python AI service unavailable for chat (${isRateLimit ? 'rate limited' : error.message}), falling back to local Gemini adapter`);
-      // If the AI service hit Gemini rate limits, wait before retrying with the same key
+      this.logger.warn(`Python AI service unavailable for chat (${isRateLimit ? 'rate limited' : error.message}), falling back to local adapter`);
       if (isRateLimit) {
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
     }
 
-    // 2. Fallback to Local OpenRouter Adapter
+    // 2. Fallback: Local Dual-LLM (Gemini primary → OpenRouter)
     try {
       const context = await this.getPatientContext(patientId);
 
@@ -161,6 +184,12 @@ ${Object.entries(context.latestVitals)
   .filter(([_, v]) => v !== null)
   .map(([metric, v]) => `- ${metric}: ${v.value} ${v.unit}`)
   .join('\n') || '- No recent vitals'}
+
+UPLOADED DOCUMENTS:
+${context.uploadedDocs.length > 0
+  ? context.uploadedDocs.map(d =>
+    `--- ${d.name} (${d.type}) ---\n${d.content}`).join('\n\n')
+  : '- No documents uploaded'}
 `;
 
       const SYSTEM_PROMPT = `You are MediCore Health Advisor, a health information assistant. You have access to this patient's personal health records shown below.
@@ -173,13 +202,11 @@ ABSOLUTE RULES — violating any rule is a critical failure:
 5. Keep responses under 3 paragraphs
 6. End every response that involves a clinical question with: "Please discuss this with your doctor before making any changes."
 7. Express uncertainty explicitly: use "Based on your records, I can see..." not "This means..." or "You should..."
-8. Base every claim on the patient records provided below — never on general assumptions
+8. For questions about THIS PATIENT: base every claim on the patient records below.
+   For GENERAL medical questions (drug info, disease basics, health tips): use your medical knowledge and clearly label it as general information, not specific to this patient.
 
 PATIENT HEALTH RECORDS:
 ${contextString}`;
-
-      const openrouterKey = this.configService.get<string>('OPENROUTER_API_KEY') || '';
-      const openrouterModel = this.configService.get<string>('OPENROUTER_MODEL') || 'google/gemma-4-27b-it:free';
 
       const messages = [
         { role: 'system', content: SYSTEM_PROMPT },
@@ -190,12 +217,59 @@ ${contextString}`;
         { role: 'user', content: message },
       ];
 
+      // 2a. Try Gemini first
+      const geminiKey = this.configService.get<string>('GEMINI_API_KEY');
+      if (geminiKey) {
+        try {
+          const genAI = new GoogleGenerativeAI(geminiKey);
+          const model = genAI.getGenerativeModel({ 
+            model: 'gemini-2.5-flash',
+            systemInstruction: SYSTEM_PROMPT,
+            generationConfig: {
+              maxOutputTokens: 1000,
+              temperature: 0.3,
+            }
+          });
+
+          const history = conversationHistory.map(msg => ({
+            role: msg.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: msg.content }]
+          }));
+
+          const chat = model.startChat({ history });
+          const result = await chat.sendMessage(message);
+          const reply = result.response.text();
+
+          const safetyKeywords = ['icall', '9152987821', 'concerned about what you shared', 'real person can'];
+          const safetyFlag = safetyKeywords.some(keyword => reply.toLowerCase().includes(keyword.toLowerCase()));
+
+          this.logger.log('✓ Response from Gemini fallback adapter');
+          return { reply, safetyFlag, sources: ['Patient Health Records'] };
+        } catch (geminiErr: any) {
+          this.logger.warn(`Gemini fallback failed (${geminiErr.message}), trying OpenRouter...`);
+        }
+      }
+
+      // 2b. Fallback to OpenRouter
+      const openrouterKey = this.configService.get<string>('OPENROUTER_API_KEY') || '';
+      const openrouterModel = this.configService.get<string>('OPENROUTER_MODEL') || 'nvidia/nemotron-3-nano-30b-a3b:free';
+
+      // Truncate system prompt for smaller model context window
+      const truncatedMessages = [
+        { role: 'system', content: SYSTEM_PROMPT.length > 6000 ? SYSTEM_PROMPT.substring(0, 6000) + '\n...(truncated)' : SYSTEM_PROMPT },
+        ...conversationHistory.slice(-6).map(msg => ({
+          role: msg.role === 'assistant' ? 'assistant' : 'user',
+          content: msg.content,
+        })),
+        { role: 'user', content: message },
+      ];
+
       const response = await axios.post(
         'https://openrouter.ai/api/v1/chat/completions',
         {
           model: openrouterModel,
-          messages,
-          max_tokens: 500,
+          messages: truncatedMessages,
+          max_tokens: 800,
           temperature: 0.3,
         },
         {
@@ -211,21 +285,15 @@ ${contextString}`;
 
       const reply = response.data.choices[0].message.content;
 
-      const safetyKeywords = [
-        'icall', '9152987821', 'concerned about what you shared',
-        'real person can'
-      ];
+      const safetyKeywords = ['icall', '9152987821', 'concerned about what you shared', 'real person can'];
       const safetyFlag = safetyKeywords.some(keyword => 
         reply.toLowerCase().includes(keyword.toLowerCase())
       );
 
-      return { 
-        reply, 
-        safetyFlag, 
-        sources: ['Patient Health Records'] 
-      };
+      this.logger.log('✓ Response from OpenRouter fallback adapter');
+      return { reply, safetyFlag, sources: ['Patient Health Records'] };
     } catch (error: any) {
-      this.logger.error('OpenRouter API error', error?.response?.data || error?.message || error);
+      this.logger.error('All LLM providers failed', error?.response?.data || error?.message || error);
       return { 
         reply: "I'm temporarily unavailable. Please try again shortly.", 
         safetyFlag: false, 

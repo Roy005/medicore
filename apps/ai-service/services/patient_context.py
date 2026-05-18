@@ -193,6 +193,31 @@ class PatientContextService:
                 for r in alert_records
             ]
 
+            # 7. Uploaded Documents (extracted text from lab reports, prescriptions, scans)
+            docs_query = """
+                SELECT original_name, document_type, extracted_text, upload_date
+                FROM documents
+                WHERE patient_id = $1
+                  AND extraction_status = 'completed'
+                  AND extracted_text IS NOT NULL
+                ORDER BY upload_date DESC
+                LIMIT 10
+            """
+            try:
+                doc_records = await conn.fetch(docs_query, patient_id)
+                uploaded_docs = [
+                    {
+                        "name": r["original_name"],
+                        "type": r["document_type"],
+                        "content": r["extracted_text"][:2000],  # Truncate per doc
+                        "uploadDate": r["upload_date"].isoformat()
+                    }
+                    for r in doc_records
+                ]
+            except Exception:
+                # documents table may not have the new columns yet (pre-migration)
+                uploaded_docs = []
+
         # Assemble final dictionary
         full_context = {
             "patientId": patient_id,
@@ -203,6 +228,7 @@ class PatientContextService:
             "recentVitals": dict(recent_vitals),
             "vitalsHistory": vitals_history,
             "recentAlerts": alerts,
+            "uploadedDocuments": uploaded_docs,
             "familyHistory": {},  # Placeholder
             "lastUpdated": datetime.now(timezone.utc).isoformat()
         }
@@ -230,6 +256,7 @@ class PatientContextService:
                 {"metric": "glucose", "value": 88, "timestamp": "2026-03-01T08:00:00Z"}
             ],
             "recentAlerts": [],
+            "uploadedDocuments": [],
             "familyHistory": {},
             "lastUpdated": datetime.now(timezone.utc).isoformat()
         }
