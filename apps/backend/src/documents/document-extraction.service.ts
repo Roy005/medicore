@@ -1,6 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, IsNull, Not } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { Document } from '../entities/document.entity';
 
@@ -14,9 +14,10 @@ import { Document } from '../entities/document.entity';
  *       2. Fallback: Tesseract.js (local OCR, no API calls, good for printed text)
  *
  * Extraction runs asynchronously after document upload (fire-and-forget).
+ * On startup, automatically backfills any documents with pending extraction.
  */
 @Injectable()
-export class DocumentExtractionService {
+export class DocumentExtractionService implements OnModuleInit {
   private readonly logger = new Logger(DocumentExtractionService.name);
 
   constructor(
@@ -26,6 +27,53 @@ export class DocumentExtractionService {
   ) {}
 
   /**
+   * On module init, backfill any documents that have pending extraction.
+   * This handles documents uploaded before the extraction pipeline existed.
+   */
+  async onModuleInit() {
+    // Run backfill asynchronously so it doesn't block app startup
+    setTimeout(() => this.backfillPendingDocuments(), 5000);
+  }
+
+  /**
+   * Find all documents with file_data but no extracted text, and process them.
+   */
+  async backfillPendingDocuments(): Promise<void> {
+    try {
+      const pendingDocs = await this.documentRepo.find({
+        where: [
+          { extraction_status: 'pending', file_data: Not(IsNull()) },
+          // Also catch documents that pre-date the extraction_status column
+          // (they'll have NULL or empty extraction_status)
+        ],
+        select: ['id', 'original_name', 'mimetype'],
+        take: 50, // Process max 50 at a time to avoid overload
+      });
+
+      if (pendingDocs.length === 0) {
+        this.logger.log('No pending documents to backfill');
+        return;
+      }
+
+      this.logger.log(`Backfilling ${pendingDocs.length} documents with text extraction...`);
+
+      for (const doc of pendingDocs) {
+        try {
+          await this.extractAndSave(doc.id);
+          // Small delay between docs to avoid hammering APIs
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } catch (err: any) {
+          this.logger.warn(`Backfill failed for "${doc.original_name}": ${err.message}`);
+        }
+      }
+
+      this.logger.log('Document backfill completed');
+    } catch (err: any) {
+      this.logger.warn(`Backfill skipped (likely missing columns): ${err.message}`);
+    }
+  }
+
+  /**
    * Extract text from a document and save it to the database.
    * This is designed to be called fire-and-forget after upload.
    */
@@ -33,7 +81,11 @@ export class DocumentExtractionService {
     const doc = await this.documentRepo.findOne({ where: { id: documentId } });
     if (!doc || !doc.file_data) {
       this.logger.warn(`Document ${documentId} not found or has no file data`);
-      await this.documentRepo.update(documentId, { extraction_status: 'failed' });
+      try {
+        await this.documentRepo.update(documentId, { extraction_status: 'failed' });
+      } catch {
+        // Column might not exist yet
+      }
       return;
     }
 
@@ -66,7 +118,11 @@ export class DocumentExtractionService {
       this.logger.error(
         `Extraction failed for "${doc.original_name}": ${err.message}`,
       );
-      await this.documentRepo.update(documentId, { extraction_status: 'failed' });
+      try {
+        await this.documentRepo.update(documentId, { extraction_status: 'failed' });
+      } catch {
+        // Column might not exist yet
+      }
     }
   }
 
