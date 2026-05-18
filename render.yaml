@@ -16,8 +16,10 @@ services:
     envVars:
       - key: DATABASE_URL
         sync: false
-      - key: GEMINI_API_KEY
+      - key: OPENROUTER_API_KEY
         sync: false
+      - key: OPENROUTER_MODEL
+        value: google/gemma-4-26b-a4b-it:free
 
   # ── Backend (NestJS) ───────────────────────
   - type: web
@@ -41,7 +43,7 @@ services:
         generateValue: true
       - key: BCRYPT_SALT_ROUNDS
         value: "12"
-      - key: GEMINI_API_KEY
+      - key: OPENROUTER_API_KEY
         sync: false
       - key: AI_SERVICE_URL
         sync: false

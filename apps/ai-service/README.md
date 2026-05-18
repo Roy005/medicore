@@ -36,7 +36,7 @@ pip install -r requirements.txt
 
 # 3. Configure environment
 cp .env.example .env
-# Edit .env and set your GEMINI_API_KEY
+# Edit .env and set your OPENROUTER_API_KEY
 
 # 4. Run the server
 uvicorn main:app --host 127.0.0.1 --port 8001
@@ -56,7 +56,8 @@ docker run -p 8001:8001 --env-file .env medicore-ai-service
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `GEMINI_API_KEY` | Yes | — | Google Gemini API key for AI responses |
+| `OPENROUTER_API_KEY` | Yes | — | OpenRouter API key for AI responses |
+| `OPENROUTER_MODEL` | No | `google/gemma-4-26b-a4b-it:free` | OpenRouter model identifier |
 | `DATABASE_URL` | No | `postgresql://...localhost:5432/medicore` | PostgreSQL connection string |
 | `PORT` | No | `8001` | Server port |
 | `DEBUG` | No | `false` | Enable debug logging |
@@ -89,7 +90,7 @@ ai-service/
 │   ├── vitals.py                # Vitals anomaly detection endpoint
 │   └── emergency.py             # Emergency flags endpoint
 ├── services/
-│   ├── llm_service.py           # Gemini SDK wrapper, safety rules, crisis detection
+│   ├── llm_service.py           # OpenRouter API wrapper, safety rules, crisis detection
 │   ├── patient_context.py       # Patient data aggregation + caching
 │   ├── risk_service.py          # CV + T2D risk scoring algorithms
 │   ├── vitals_service.py        # Vitals anomaly detection engine
@@ -132,7 +133,7 @@ curl http://localhost:8001/ai/patients/p-123/summary
 ## Tech Stack
 
 - **Framework**: FastAPI + Uvicorn
-- **AI/LLM**: Google Gemini 2.0 Flash
+- **AI/LLM**: OpenRouter API (google/gemma-4-26b-a4b-it:free)
 - **Database**: PostgreSQL via asyncpg
 - **Validation**: Pydantic v2
 - **Testing**: pytest + pytest-asyncio

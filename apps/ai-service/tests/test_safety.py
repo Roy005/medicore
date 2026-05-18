@@ -3,7 +3,7 @@ MediCore AI Service — Safety Test Suite (Day 4)
 Tests the 6 mandatory safety constraints of the AI Health Advisor.
 
 These tests validate the LLM service's LOCAL safety logic (crisis detection,
-prompt rules) and do NOT require a live Gemini API key.
+prompt rules) and do NOT require a live OpenRouter API key.
 """
 
 import pytest

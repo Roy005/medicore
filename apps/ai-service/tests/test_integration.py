@@ -304,7 +304,7 @@ class TestEdgeCases:
             "conversationHistory": [],
             "patientContext": {},
         })
-        # Should return 200 (Gemini handles it) or 422 (validation)
+        # Should return 200 (OpenRouter handles it) or 422 (validation)
         assert response.status_code in (200, 422)
 
     def test_vitals_with_unknown_metric(self, client: TestClient):

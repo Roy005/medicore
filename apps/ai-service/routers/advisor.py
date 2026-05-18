@@ -1,6 +1,6 @@
 """
 MediCore AI Service — Advisor Router
-POST /ai/advisor/chat — RAG Health Advisor powered by Gemini API.
+POST /ai/advisor/chat — RAG Health Advisor powered by OpenRouter API.
 GET  /ai/patients/{id}/conversations — Conversation history
 GET  /ai/patients/{id}/summary — Full patient AI summary
 """
@@ -50,7 +50,7 @@ async def advisor_chat(
     AI-powered medical advisor chat.
     1. Fetches patient context from DB (or mock)
     2. Loads recent conversation history for multi-turn context
-    3. Sends message + context to Gemini
+    3. Sends message + context to OpenRouter LLM
     4. Logs the interaction
     5. Returns AI reply with safety flag
     """
