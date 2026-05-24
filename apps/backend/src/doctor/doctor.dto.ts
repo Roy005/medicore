@@ -47,4 +47,28 @@ export class UpdateDoctorProfileDto {
   @IsString()
   @IsOptional()
   registrationNumber?: string;
+
+  @IsString()
+  @IsOptional()
+  fullName?: string;
+
+  @IsString()
+  @IsOptional()
+  qualifications?: string;
+
+  @IsString()
+  @IsOptional()
+  phone?: string;
+
+  @IsString()
+  @IsOptional()
+  hospitalAddress?: string;
+
+  @IsString()
+  @IsOptional()
+  hospitalPhone?: string;
+
+  @IsString()
+  @IsOptional()
+  hospitalEmail?: string;
 }

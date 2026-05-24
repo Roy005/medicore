@@ -8,28 +8,45 @@ import { useAuth } from '@/contexts/AuthContext';
 import {
   ArrowLeft, Heart, TrendingUp, Activity, Droplets, ThermometerSun,
   Weight, Pill, AlertTriangle, FileText, Clock, User, Calendar,
-  Shield, Sparkles, ChevronRight, Plus, X, Download, Eye, Loader2
+  Shield, Sparkles, ChevronRight, Plus, X, Download, Eye, Loader2,
+  ClipboardList, Trash2, CheckCircle2
 } from 'lucide-react';
 
-// --- Prescription Modal Component ---
-function PrescriptionModal({ isOpen, onClose, patientId, onRefresh }: { 
-  isOpen: boolean, 
-  onClose: () => void, 
-  patientId: string, 
-  onRefresh: () => void 
+// --- Generate Prescription Modal Component ---
+function GeneratePrescriptionModal({ isOpen, onClose, patientId, medications: existingMeds, onRefresh }: {
+  isOpen: boolean;
+  onClose: () => void;
+  patientId: string;
+  medications: any[];
+  onRefresh: () => void;
 }) {
-  const [activeTab, setActiveTab] = useState<'med' | 'test'>('med');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
 
-  // Med form
-  const [medData, setMedData] = useState({ drug_name: '', dosage: '', frequency: '' });
-  // Test form
-  const [testName, setTestName] = useState('');
-  // Common notes
-  const [additionalNotes, setAdditionalNotes] = useState('');
+  const [visitType, setVisitType] = useState('Consultation');
+  const [chiefComplaint, setChiefComplaint] = useState('');
+  const [diagnosisText, setDiagnosisText] = useState('');
+  const [diagnosisCode, setDiagnosisCode] = useState('');
+  const [clinicalNotes, setClinicalNotes] = useState('');
+  const [followUpDate, setFollowUpDate] = useState('');
+  const [followUpInstructions, setFollowUpInstructions] = useState('');
 
-  // FIX: Read token from per-patient map instead of single key
+  // Pre-populate medications from existing
+  const [meds, setMeds] = useState<Array<{
+    drug_name: string; rxnorm_code: string; dosage: string;
+    frequency: string; duration: string; instructions: string;
+  }>>([
+    { drug_name: '', rxnorm_code: '', dosage: '', frequency: '', duration: '', instructions: '' }
+  ]);
+
+  const [tests, setTests] = useState<Array<{
+    test_name: string; code: string; urgency: string; patient_instructions: string;
+  }>>([
+    { test_name: '', code: '', urgency: '', patient_instructions: '' }
+  ]);
+
+  // FIX: Read token from per-patient map
   const clinicalToken = (() => {
     if (typeof window === 'undefined') return null;
     try {
@@ -38,39 +55,64 @@ function PrescriptionModal({ isOpen, onClose, patientId, onRefresh }: {
     } catch { return null; }
   })();
 
+  // Pre-populate meds when modal opens
+  useEffect(() => {
+    if (isOpen && existingMeds.length > 0) {
+      setMeds(existingMeds.map((m: any) => ({
+        drug_name: m.drug_name || m.name || m.medication || '',
+        rxnorm_code: m.rxnorm_code || '',
+        dosage: m.dosage || '',
+        frequency: m.frequency || '',
+        duration: '',
+        instructions: '',
+      })));
+    }
+  }, [isOpen, existingMeds]);
+
+  const addMed = () => setMeds(prev => [...prev, { drug_name: '', rxnorm_code: '', dosage: '', frequency: '', duration: '', instructions: '' }]);
+  const removeMed = (i: number) => setMeds(prev => prev.filter((_, idx) => idx !== i));
+  const updateMed = (i: number, field: string, value: string) => {
+    setMeds(prev => prev.map((m, idx) => idx === i ? { ...m, [field]: value } : m));
+  };
+
+  const addTest = () => setTests(prev => [...prev, { test_name: '', code: '', urgency: '', patient_instructions: '' }]);
+  const removeTest = (i: number) => setTests(prev => prev.filter((_, idx) => idx !== i));
+  const updateTest = (i: number, field: string, value: string) => {
+    setTests(prev => prev.map((t, idx) => idx === i ? { ...t, [field]: value } : t));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
+    setSuccess(false);
+
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (clinicalToken) headers['X-Clinical-Token'] = clinicalToken;
 
     try {
-      if (activeTab === 'med') {
-        const payload = {
-          ...medData,
-          source: additionalNotes ? `Notes: ${additionalNotes}` : 'Provider Prescription'
-        };
-        await api.post(`/patients/${patientId}/medications`, payload, { headers });
-      } else {
-        // Plan field of SOAP note for test orders
-        await api.post(`/patients/${patientId}/notes`, {
-          plan: `Ordered Lab Test: ${testName}`,
-          additionalNotes: additionalNotes,
-          visitDate: new Date().toISOString().split('T')[0]
-        }, { headers });
-      }
+      const payload = {
+        visitType,
+        chiefComplaint,
+        diagnosisText,
+        diagnosisCode,
+        medications: meds.filter(m => m.drug_name.trim()),
+        tests: tests.filter(t => t.test_name.trim()),
+        clinicalNotes,
+        followUpDate,
+        followUpInstructions,
+      };
+
+      await api.post(`/patients/${patientId}/prescription`, payload, { headers });
+      setSuccess(true);
       onRefresh();
-      onClose();
-      // Reset
-      setMedData({ drug_name: '', dosage: '', frequency: '' });
-      setTestName('');
-      setAdditionalNotes('');
+      setTimeout(() => {
+        setSuccess(false);
+        onClose();
+      }, 1500);
     } catch (err: any) {
-      console.error('Prescription error:', err);
-      setError(err.response?.data?.message || err.message || 'Failed to submit prescription');
+      console.error('Prescription generation error:', err);
+      setError(err.response?.data?.message || err.message || 'Failed to generate prescription');
     } finally {
       setLoading(false);
     }
@@ -78,107 +120,244 @@ function PrescriptionModal({ isOpen, onClose, patientId, onRefresh }: {
 
   if (!isOpen) return null;
 
+  const inputCls = "w-full px-3 py-2 bg-[#f2f4f5] border-none rounded-lg focus:ring-2 focus:ring-[#005454] text-sm text-[#191c1d] placeholder:text-[#bec9c8]";
+  const labelCls = "block text-[10px] font-bold text-[#6e7979] uppercase tracking-wider mb-1";
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden ring-1 ring-black/5">
-        <div className="px-6 py-4 flex items-center justify-between border-b border-[#f2f4f5]">
-          <h3 className="text-lg font-bold text-[#191c1d]">Prescribe</h3>
-          <button onClick={onClose} className="p-1 hover:bg-[#f2f4f5] rounded-full transition-colors">
-            <X className="w-5 h-5 text-[#6e7979]" />
+    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 bg-black/50 backdrop-blur-sm overflow-y-auto">
+      <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden ring-1 ring-black/5 my-8">
+        {/* Header */}
+        <div className="px-6 py-4 flex items-center justify-between border-b border-[#f2f4f5] bg-gradient-to-r from-[#005454] to-[#0d6e6e]">
+          <div className="flex items-center gap-2">
+            <ClipboardList className="w-5 h-5 text-white" />
+            <h3 className="text-lg font-bold text-white">Generate Prescription</h3>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-white/20 rounded-full transition-colors">
+            <X className="w-5 h-5 text-white" />
           </button>
         </div>
 
-        <div className="p-6">
-          <div className="flex p-1 bg-[#f2f4f5] rounded-lg mb-6">
-            <button
-              onClick={() => setActiveTab('med')}
-              className={`flex-1 py-2 text-sm font-semibold rounded-md transition-all ${activeTab === 'med' ? 'bg-white text-[#005454] shadow-sm' : 'text-[#6e7979]'}`}
-            >
-              Medicine
-            </button>
-            <button
-              onClick={() => setActiveTab('test')}
-              className={`flex-1 py-2 text-sm font-semibold rounded-md transition-all ${activeTab === 'test' ? 'bg-white text-[#005454] shadow-sm' : 'text-[#6e7979]'}`}
-            >
-              Lab Test / Lab Service
-            </button>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {activeTab === 'med' ? (
-              <>
-                <div>
-                  <label className="block text-xs font-bold text-[#6e7979] uppercase tracking-wider mb-1">Drug Name</label>
-                  <input
-                    required
-                    type="text"
-                    value={medData.drug_name}
-                    onChange={(e) => setMedData({ ...medData, drug_name: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-[#f2f4f5] border-none rounded-lg focus:ring-2 focus:ring-[#005454] text-sm"
-                    placeholder="e.g. Amoxicillin 500mg"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-[#6e7979] uppercase tracking-wider mb-1">Dosage</label>
-                    <input
-                      required
-                      type="text"
-                      value={medData.dosage}
-                      onChange={(e) => setMedData({ ...medData, dosage: e.target.value })}
-                      className="w-full px-4 py-2.5 bg-[#f2f4f5] border-none rounded-lg focus:ring-2 focus:ring-[#005454] text-sm"
-                      placeholder="e.g. 1 Tablet"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-[#6e7979] uppercase tracking-wider mb-1">Frequency</label>
-                    <input
-                      required
-                      type="text"
-                      value={medData.frequency}
-                      onChange={(e) => setMedData({ ...medData, frequency: e.target.value })}
-                      className="w-full px-4 py-2.5 bg-[#f2f4f5] border-none rounded-lg focus:ring-2 focus:ring-[#005454] text-sm"
-                      placeholder="e.g. Twice Daily"
-                    />
-                  </div>
-                </div>
-              </>
-            ) : (
+        <form onSubmit={handleSubmit} className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
+          {/* Visit Details */}
+          <div>
+            <h4 className="text-sm font-semibold text-[#191c1d] mb-3 flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-[#005454]" /> Visit Details
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-bold text-[#6e7979] uppercase tracking-wider mb-1">Test Name</label>
+                <label className={labelCls}>Visit Type</label>
+                <select
+                  value={visitType}
+                  onChange={(e) => setVisitType(e.target.value)}
+                  className={inputCls}
+                >
+                  <option value="Consultation">Consultation</option>
+                  <option value="Follow-up visit">Follow-up Visit</option>
+                  <option value="Emergency">Emergency</option>
+                  <option value="Routine Checkup">Routine Checkup</option>
+                  <option value="New Patient">New Patient</option>
+                </select>
+              </div>
+              <div>
+                <label className={labelCls}>Chief Complaint</label>
                 <input
-                  required
                   type="text"
-                  value={testName}
-                  onChange={(e) => setTestName(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-[#f2f4f5] border-none rounded-lg focus:ring-2 focus:ring-[#005454] text-sm"
-                  placeholder="e.g. Complete Blood Count (CBC)"
+                  value={chiefComplaint}
+                  onChange={(e) => setChiefComplaint(e.target.value)}
+                  className={inputCls}
+                  placeholder="e.g. Fever, headache - 3 days"
                 />
               </div>
-            )}
-
-            <div>
-              <label className="block text-xs font-bold text-[#6e7979] uppercase tracking-wider mb-1">Additional Instructions / Notes</label>
-              <textarea
-                value={additionalNotes}
-                onChange={(e) => setAdditionalNotes(e.target.value)}
-                rows={3}
-                className="w-full px-4 py-2.5 bg-[#f2f4f5] border-none rounded-lg focus:ring-2 focus:ring-[#005454] text-sm resize-none"
-                placeholder="e.g. Take with food, or symptoms reported..."
-              />
             </div>
+          </div>
 
-            {error && <p className="text-xs text-[#ba1a1a] bg-[#ffdad6] p-2 rounded">{error}</p>}
+          {/* Diagnosis */}
+          <div>
+            <h4 className="text-sm font-semibold text-[#191c1d] mb-3 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-[#E8533A]" /> Diagnosis
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="md:col-span-2">
+                <label className={labelCls}>Diagnosis Description</label>
+                <input
+                  type="text"
+                  value={diagnosisText}
+                  onChange={(e) => setDiagnosisText(e.target.value)}
+                  className={inputCls}
+                  placeholder="e.g. Viral fever"
+                />
+              </div>
+              <div>
+                <label className={labelCls}>ICD-10 Code</label>
+                <input
+                  type="text"
+                  value={diagnosisCode}
+                  onChange={(e) => setDiagnosisCode(e.target.value)}
+                  className={inputCls}
+                  placeholder="e.g. B34.9"
+                />
+              </div>
+            </div>
+          </div>
 
+          {/* Medications */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-semibold text-[#191c1d] flex items-center gap-2">
+                <Pill className="w-4 h-4 text-[#E8533A]" /> Medications
+              </h4>
+              <button type="button" onClick={addMed} className="text-xs font-bold text-[#005454] hover:underline flex items-center gap-1">
+                <Plus className="w-3 h-3" /> Add Medication
+              </button>
+            </div>
+            <div className="space-y-3">
+              {meds.map((med, i) => (
+                <div key={i} className="grid grid-cols-12 gap-2 items-start bg-[#f8fafb] p-3 rounded-lg border border-[#e6e8e9]">
+                  <div className="col-span-12 md:col-span-3">
+                    <label className={labelCls}>Drug Name</label>
+                    <input type="text" value={med.drug_name} onChange={(e) => updateMed(i, 'drug_name', e.target.value)} className={inputCls} placeholder="Drug name" />
+                  </div>
+                  <div className="col-span-4 md:col-span-1">
+                    <label className={labelCls}>Dosage</label>
+                    <input type="text" value={med.dosage} onChange={(e) => updateMed(i, 'dosage', e.target.value)} className={inputCls} placeholder="500mg" />
+                  </div>
+                  <div className="col-span-4 md:col-span-2">
+                    <label className={labelCls}>Frequency</label>
+                    <input type="text" value={med.frequency} onChange={(e) => updateMed(i, 'frequency', e.target.value)} className={inputCls} placeholder="Twice daily" />
+                  </div>
+                  <div className="col-span-4 md:col-span-2">
+                    <label className={labelCls}>Duration</label>
+                    <input type="text" value={med.duration} onChange={(e) => updateMed(i, 'duration', e.target.value)} className={inputCls} placeholder="5 days" />
+                  </div>
+                  <div className="col-span-11 md:col-span-3">
+                    <label className={labelCls}>Instructions</label>
+                    <input type="text" value={med.instructions} onChange={(e) => updateMed(i, 'instructions', e.target.value)} className={inputCls} placeholder="After meals" />
+                  </div>
+                  <div className="col-span-1 flex items-end justify-center pb-1">
+                    {meds.length > 1 && (
+                      <button type="button" onClick={() => removeMed(i)} className="p-1.5 text-[#ba1a1a] hover:bg-[#ffdad6] rounded-md transition-colors">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Lab Tests */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-semibold text-[#191c1d] flex items-center gap-2">
+                <Activity className="w-4 h-4 text-[#4c5f7e]" /> Investigations / Lab Tests
+              </h4>
+              <button type="button" onClick={addTest} className="text-xs font-bold text-[#005454] hover:underline flex items-center gap-1">
+                <Plus className="w-3 h-3" /> Add Test
+              </button>
+            </div>
+            <div className="space-y-3">
+              {tests.map((test, i) => (
+                <div key={i} className="grid grid-cols-12 gap-2 items-start bg-[#f8fafb] p-3 rounded-lg border border-[#e6e8e9]">
+                  <div className="col-span-12 md:col-span-4">
+                    <label className={labelCls}>Test Name</label>
+                    <input type="text" value={test.test_name} onChange={(e) => updateTest(i, 'test_name', e.target.value)} className={inputCls} placeholder="e.g. Complete Blood Count" />
+                  </div>
+                  <div className="col-span-4 md:col-span-2">
+                    <label className={labelCls}>Code</label>
+                    <input type="text" value={test.code} onChange={(e) => updateTest(i, 'code', e.target.value)} className={inputCls} placeholder="LOINC" />
+                  </div>
+                  <div className="col-span-4 md:col-span-2">
+                    <label className={labelCls}>Urgency</label>
+                    <select value={test.urgency} onChange={(e) => updateTest(i, 'urgency', e.target.value)} className={inputCls}>
+                      <option value="">Select</option>
+                      <option value="Routine">Routine</option>
+                      <option value="Urgent">Urgent</option>
+                      <option value="STAT">STAT</option>
+                    </select>
+                  </div>
+                  <div className="col-span-11 md:col-span-3">
+                    <label className={labelCls}>Patient Instructions</label>
+                    <input type="text" value={test.patient_instructions} onChange={(e) => updateTest(i, 'patient_instructions', e.target.value)} className={inputCls} placeholder="e.g. Fasting required" />
+                  </div>
+                  <div className="col-span-1 flex items-end justify-center pb-1">
+                    {tests.length > 1 && (
+                      <button type="button" onClick={() => removeTest(i)} className="p-1.5 text-[#ba1a1a] hover:bg-[#ffdad6] rounded-md transition-colors">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Clinical Notes */}
+          <div>
+            <h4 className="text-sm font-semibold text-[#191c1d] mb-3 flex items-center gap-2">
+              <FileText className="w-4 h-4 text-[#005454]" /> Clinical Notes / Advice
+            </h4>
+            <textarea
+              value={clinicalNotes}
+              onChange={(e) => setClinicalNotes(e.target.value)}
+              rows={3}
+              className={`${inputCls} resize-none`}
+              placeholder="e.g. Complete bed rest, adequate hydration..."
+            />
+          </div>
+
+          {/* Follow-up */}
+          <div>
+            <h4 className="text-sm font-semibold text-[#191c1d] mb-3 flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-[#4c5f7e]" /> Follow-up
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className={labelCls}>Follow-up Date</label>
+                <input
+                  type="date"
+                  value={followUpDate}
+                  onChange={(e) => setFollowUpDate(e.target.value)}
+                  className={inputCls}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Instructions</label>
+                <input
+                  type="text"
+                  value={followUpInstructions}
+                  onChange={(e) => setFollowUpInstructions(e.target.value)}
+                  className={inputCls}
+                  placeholder="e.g. Return with lab reports"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Error / Success */}
+          {error && (
+            <p className="text-xs text-[#ba1a1a] bg-[#ffdad6] p-3 rounded-lg flex items-center gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" /> {error}
+            </p>
+          )}
+          {success && (
+            <p className="text-xs text-[#4CAF82] bg-[#4CAF82]/10 p-3 rounded-lg flex items-center gap-2">
+              <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" /> Prescription generated and saved to documents!
+            </p>
+          )}
+
+          {/* Actions */}
+          <div className="flex items-center justify-between pt-2 border-t border-[#f2f4f5]">
+            <p className="text-[10px] text-[#bec9c8]">Doctor info is fetched from your profile settings</p>
             <button
-              disabled={loading}
+              disabled={loading || success}
               type="submit"
-              className="w-full py-3 bg-[#005454] text-white font-bold rounded-xl hover:bg-[#004040] transition-colors disabled:opacity-50 flex items-center justify-center gap-2 mt-2"
+              className="px-6 py-3 bg-gradient-to-r from-[#005454] to-[#0d6e6e] text-white font-bold rounded-xl hover:shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Confirm Prescription'}
+              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <ClipboardList className="w-5 h-5" />}
+              {loading ? 'Generating...' : 'Generate Prescription'}
             </button>
-          </form>
-        </div>
+          </div>
+        </form>
       </div>
     </div>
   );
@@ -195,7 +374,7 @@ export default function PatientEHRPage() {
   const [documents, setDocuments] = useState<any[]>([]);
   const [timeline, setTimeline] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isPrescribeOpen, setIsPrescribeOpen] = useState(false);
+  const [isGenerateRxOpen, setIsGenerateRxOpen] = useState(false);
   const [viewingDoc, setViewingDoc] = useState<string | null>(null);
 
   // FIX: Read token from per-patient map instead of single key
@@ -260,11 +439,11 @@ export default function PatientEHRPage() {
           <Shield className="w-3.5 h-3.5" /> Access Granted
         </div>
         <button
-          onClick={() => setIsPrescribeOpen(true)}
-          className="px-4 py-2 bg-[#E8533A] text-white font-bold rounded-lg hover:shadow-lg transition-all flex items-center gap-2 text-sm ml-2"
+          onClick={() => setIsGenerateRxOpen(true)}
+          className="px-4 py-2 bg-gradient-to-r from-[#005454] to-[#0d6e6e] text-white font-bold rounded-lg hover:shadow-lg transition-all flex items-center gap-2 text-sm ml-2"
         >
-          <Plus className="w-4 h-4" />
-          Prescribe
+          <ClipboardList className="w-4 h-4" />
+          Generate Prescription
         </button>
       </div>
 
@@ -511,10 +690,11 @@ export default function PatientEHRPage() {
         </div>
       </Link>
 
-      <PrescriptionModal 
-        isOpen={isPrescribeOpen} 
-        onClose={() => setIsPrescribeOpen(false)} 
+      <GeneratePrescriptionModal
+        isOpen={isGenerateRxOpen}
+        onClose={() => setIsGenerateRxOpen(false)}
         patientId={patientId}
+        medications={medications}
         onRefresh={fetchEHR}
       />
     </div>

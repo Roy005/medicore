@@ -20,6 +20,27 @@ import { UserRole } from '../entities';
 export class DoctorController {
   constructor(private readonly doctorService: DoctorService) {}
 
+  /** GET /api/v1/doctors/me/profile — get logged-in doctor's own profile */
+  @Get('me/profile')
+  @Roles(UserRole.DOCTOR)
+  async getMyProfile(@Req() req: any) {
+    return this.doctorService.getProfileByUserId(req.user.userId);
+  }
+
+  /** PATCH /api/v1/doctors/me/profile — update logged-in doctor's own profile */
+  @Patch('me/profile')
+  @Roles(UserRole.DOCTOR)
+  async updateMyProfile(
+    @Body() dto: UpdateDoctorProfileDto,
+    @Req() req: any,
+  ) {
+    const profile = await this.doctorService.getProfileByUserId(req.user.userId);
+    if (!profile) {
+      throw new Error('Doctor profile not found');
+    }
+    return this.doctorService.updateProfile(profile.id, dto, req.user);
+  }
+
   /** GET /api/v1/doctors/my-patients — get patients under doctor care */
   @Get('my-patients')
   @Roles(UserRole.DOCTOR)

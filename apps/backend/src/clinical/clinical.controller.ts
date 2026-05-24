@@ -11,12 +11,17 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { ClinicalService } from './clinical.service';
+import { PrescriptionService } from './prescription.service';
+import type { GeneratePrescriptionDto } from './prescription.service';
 import { CreateNoteDto, CreateDiagnosisDto } from './clinical.dto';
 import { ClinicalAccessGuard } from '../consent/clinical-access.guard';
 
 @Controller()
 export class ClinicalController {
-  constructor(private readonly clinicalService: ClinicalService) {}
+  constructor(
+    private readonly clinicalService: ClinicalService,
+    private readonly prescriptionService: PrescriptionService,
+  ) {}
 
   // ─── CLINICAL NOTES ───────────────────────────────────────
 
@@ -101,5 +106,23 @@ export class ClinicalController {
       doctorId,
       ip,
     );
+  }
+
+  // ─── PRESCRIPTION GENERATION ────────────────────────────
+
+  /** POST /api/v1/patients/:id/prescription — generate prescription PDF and store as document */
+  @UseGuards(ClinicalAccessGuard)
+  @Post('patients/:id/prescription')
+  async generatePrescription(
+    @Param('id') patientId: string,
+    @Body() dto: GeneratePrescriptionDto,
+    @Req() req: any,
+    @Ip() ip: string,
+  ) {
+    const doctorId = req.clinicalAccess?.doctorId || req.user?.userId;
+    if (!doctorId) {
+      throw new BadRequestException('Doctor identification missing from request');
+    }
+    return this.prescriptionService.generatePrescription(patientId, doctorId, dto, ip);
   }
 }

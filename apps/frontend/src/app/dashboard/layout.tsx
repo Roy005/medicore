@@ -47,6 +47,7 @@ export default function DashboardLayout({
 
   const doctorNavItems = [
     { name: 'Doctor Portal', href: '/dashboard/doctor', icon: Stethoscope },
+    { name: 'My Profile', href: '/dashboard/doctor/profile', icon: UserCircle },
     { name: 'AI Advisor', href: '/dashboard/ai-advisor', icon: Bot },
     { name: 'Risk Scores', href: '/dashboard/risk-scores', icon: BarChart3 },
   ];

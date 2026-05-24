@@ -34,6 +34,24 @@ export class DoctorProfile {
   @Column({ name: 'hospital_affiliation', type: 'varchar', length: 255, nullable: true })
   hospital_affiliation!: string | null;
 
+  @Column({ name: 'full_name', type: 'varchar', length: 200, nullable: true })
+  full_name!: string | null;
+
+  @Column({ type: 'varchar', length: 300, nullable: true })
+  qualifications!: string | null;
+
+  @Column({ type: 'varchar', length: 30, nullable: true })
+  phone!: string | null;
+
+  @Column({ name: 'hospital_address', type: 'text', nullable: true })
+  hospital_address!: string | null;
+
+  @Column({ name: 'hospital_phone', type: 'varchar', length: 30, nullable: true })
+  hospital_phone!: string | null;
+
+  @Column({ name: 'hospital_email', type: 'varchar', length: 320, nullable: true })
+  hospital_email!: string | null;
+
   @Column({
     name: 'verification_status',
     type: 'enum',

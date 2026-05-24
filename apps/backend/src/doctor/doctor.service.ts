@@ -65,6 +65,12 @@ export class DoctorService {
     if (dto.specialty !== undefined) updates.specialty = dto.specialty;
     if (dto.hospitalAffiliation !== undefined) updates.hospital_affiliation = dto.hospitalAffiliation;
     if (dto.registrationNumber !== undefined) updates.registration_number = dto.registrationNumber;
+    if (dto.fullName !== undefined) updates.full_name = dto.fullName;
+    if (dto.qualifications !== undefined) updates.qualifications = dto.qualifications;
+    if (dto.phone !== undefined) updates.phone = dto.phone;
+    if (dto.hospitalAddress !== undefined) updates.hospital_address = dto.hospitalAddress;
+    if (dto.hospitalPhone !== undefined) updates.hospital_phone = dto.hospitalPhone;
+    if (dto.hospitalEmail !== undefined) updates.hospital_email = dto.hospitalEmail;
 
     await this.doctorProfileRepo.update({ id: doctorProfileId }, updates);
     const updated = await this.doctorProfileRepo.findOne({ where: { id: doctorProfileId } });
